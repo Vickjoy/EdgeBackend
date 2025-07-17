@@ -12,7 +12,7 @@ class SubcategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug']
 
 class ProductSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
+    image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Product
@@ -34,14 +34,19 @@ class ProductSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'subcategory': 'Subcategory not found.'})
         return super().to_internal_value(data)
 
-    def get_image(self, obj):
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
         request = self.context.get('request')
-        if obj.image:
-            url = obj.image.url
+        image_field = getattr(instance, 'image', None)
+        if image_field and image_field.name:
+            url = image_field.url
             if request is not None:
-                return request.build_absolute_uri(url)
-            return url
-        return None
+                rep['image'] = request.build_absolute_uri(url)
+            else:
+                rep['image'] = url
+        else:
+            rep['image'] = None
+        return rep
 
     def validate(self, data):
         errors = {}
