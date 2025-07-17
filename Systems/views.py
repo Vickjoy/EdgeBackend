@@ -56,16 +56,25 @@ class ProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
-        subcategory_id = self.kwargs.get('subcategory_pk')
+        # Prefer explicit slug
         subcategory_slug = self.kwargs.get('subcategory_slug')
-        if subcategory_id:
-            return Product.objects.filter(subcategory_id=subcategory_id)
         if subcategory_slug:
             try:
                 subcategory = Subcategory.objects.get(slug=subcategory_slug)
             except Subcategory.DoesNotExist:
                 raise Http404("Subcategory not found")
-            return Product.objects.filter(subcategory=subcategory)
+            return Product.objects.filter(subcategory_id=subcategory.id)
+        # Handle nested router case where subcategory_pk may be a slug or an ID
+        subcategory_pk = self.kwargs.get('subcategory_pk')
+        if subcategory_pk:
+            try:
+                if str(subcategory_pk).isdigit():
+                    subcategory = Subcategory.objects.get(id=subcategory_pk)
+                else:
+                    subcategory = Subcategory.objects.get(slug=subcategory_pk)
+            except Subcategory.DoesNotExist:
+                raise Http404("Subcategory not found")
+            return Product.objects.filter(subcategory_id=subcategory.id)
         return Product.objects.all()
 
     def perform_create(self, serializer):
