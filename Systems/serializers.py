@@ -7,9 +7,10 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'type', 'slug']
 
 class SubcategorySerializer(serializers.ModelSerializer):
+    category = serializers.PrimaryKeyRelatedField(read_only=True)
     class Meta:
         model = Subcategory
-        fields = ['id', 'name', 'slug']
+        fields = ['id', 'name', 'slug', 'category']
 
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)

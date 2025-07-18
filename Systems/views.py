@@ -21,24 +21,18 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         category_slug = self.kwargs.get('category_slug')
         if category_slug:
-            try:
-                category = Category.objects.get(slug=category_slug)
-            except Category.DoesNotExist:
-                return Subcategory.objects.none()
-            return Subcategory.objects.filter(category=category)
+            return Subcategory.objects.filter(category__slug=category_slug)
         return Subcategory.objects.all()
 
     def perform_create(self, serializer):
         category_slug = self.kwargs.get('category_slug')
         category_id = self.kwargs.get('category_pk')
         category = None
-        # Prefer explicit slug
         if category_slug:
             try:
                 category = Category.objects.get(slug=category_slug)
             except Category.DoesNotExist:
                 raise serializers.ValidationError("Category not found")
-        # If category_pk is present, check if it's numeric (ID) or a slug
         elif category_id:
             try:
                 if str(category_id).isdigit():
