@@ -15,6 +15,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly]
 
 class SubcategoryViewSet(viewsets.ModelViewSet):
+    queryset = Subcategory.objects.all()
     serializer_class = SubcategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
 
@@ -47,6 +48,7 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError("Category not found in URL.")
 
 class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
