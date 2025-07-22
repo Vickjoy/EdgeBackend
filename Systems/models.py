@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.text import slugify
 
+# Category model: 'type' field is required and validated (choices: 'fire', 'ict')
 class Category(models.Model):
     TYPE_CHOICES = [
         ('fire', 'Fire Safety'),
@@ -22,7 +23,7 @@ class Category(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.name
+        return f'{self.name} ({self.get_type_display()})'
 
 class Subcategory(models.Model):
     name = models.CharField(max_length=100)

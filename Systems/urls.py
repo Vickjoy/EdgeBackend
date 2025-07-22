@@ -20,5 +20,5 @@ urlpatterns += [
     path('me/', me_view, name='me'),
     path('categories/<slug:category_slug>/subcategories/', SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}), name='subcategory-by-category-slug'),
     path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='subcategory-detail-by-category'),
-    path('subcategories/<slug:subcategory_slug>/products/', ProductViewSet.as_view({'get': 'list'}), name='product-by-subcategory-slug'),
+    path('subcategories/<slug:subcategory_slug>/products/', ProductViewSet.as_view({'get': 'list', 'post': 'create'}), name='product-by-subcategory-slug'),
 ] 

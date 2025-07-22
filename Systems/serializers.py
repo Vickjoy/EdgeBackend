@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Category, Subcategory, Product
 
 class CategorySerializer(serializers.ModelSerializer):
+    # 'type' field is included and validated (choices: 'fire', 'ict')
     class Meta:
         model = Category
         fields = ['id', 'name', 'type', 'slug']
@@ -25,7 +26,7 @@ class SubcategoryMiniSerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
-    subcategory = SubcategoryMiniSerializer()
+    subcategory = SubcategoryMiniSerializer(read_only=True)
     subcategory_slug = serializers.SerializerMethodField()
     category_slug = serializers.SerializerMethodField()
     documentation_url = serializers.SerializerMethodField()
@@ -39,7 +40,7 @@ class ProductSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'name': {'required': True},
             'price': {'required': True},
-            'subcategory': {'required': True},
+            # 'subcategory': {'required': True},  # Remove this line so subcategory is not required
         }
 
     def get_subcategory_slug(self, obj):
@@ -88,7 +89,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         errors = {}
-        for field in ['name', 'price', 'subcategory']:
+        for field in ['name', 'price']:
             if not data.get(field):
                 errors[field] = f"This field is required."
         if errors:
