@@ -52,6 +52,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
+    lookup_field = 'slug'  # Use slug for lookups instead of id
 
     def get_queryset(self):
         # Prefer explicit slug
