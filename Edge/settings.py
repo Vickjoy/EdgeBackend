@@ -32,6 +32,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'Systems',
+    'cloudinary',
+    'cloudinary_storage',
 ]
 
 MIDDLEWARE = [
@@ -117,12 +119,31 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOW_ALL_ORIGINS = True  # Or restrict to your frontend's origin
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# Cloudinary configuration
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': 'ddwpy1x3v',
+    'API_KEY': '796737964934249',
+    'API_SECRET': 'Kc2-_ihT9ZadSqdUllThmxrMZaM',
+}
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+# MEDIA_URL = '/media/'
+# MEDIA_ROOT = BASE_DIR / 'media'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+import os
+os.environ['CLOUDINARY_CLOUD_NAME'] = 'ddwpy1x3v'
+os.environ['CLOUDINARY_API_KEY'] = '796737964934249'
+os.environ['CLOUDINARY_API_SECRET'] = 'Kc2-_ihT9ZadSqdUllThmxrMZaM'
+
+# CORS configuration for frontend development
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]

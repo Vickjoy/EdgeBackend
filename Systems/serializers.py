@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Category, Subcategory, Product
+from .models import Category, Subcategory, Product, ProductSpecification
 
 class CategorySerializer(serializers.ModelSerializer):
     # 'type' field is included and validated (choices: 'fire', 'ict')
@@ -24,9 +24,18 @@ class SubcategoryMiniSerializer(serializers.ModelSerializer):
         model = Subcategory
         fields = ['id', 'name', 'slug', 'category']
 
+class ProductSpecificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductSpecification
+        fields = ['key', 'value']
+
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
-    subcategory = SubcategoryMiniSerializer(read_only=True)
+    subcategory = serializers.PrimaryKeyRelatedField(queryset=Subcategory.objects.all(), required=True, write_only=True)
+    subcategory_detail = SubcategoryMiniSerializer(source='subcategory', read_only=True)
+    category = serializers.SerializerMethodField(read_only=True)
+    specifications = ProductSpecificationSerializer(many=True)
+    specifications_table = serializers.SerializerMethodField(read_only=True)
     subcategory_slug = serializers.SerializerMethodField()
     category_slug = serializers.SerializerMethodField()
     documentation_url = serializers.SerializerMethodField()
@@ -34,13 +43,15 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'price', 'description', 'image', 'features', 'specifications',
-            'documentation', 'documentation_url', 'status', 'subcategory', 'subcategory_slug', 'category_slug', 'slug'
+            'id', 'name', 'price', 'description', 'image', 'specifications',
+            'specifications_table',
+            'documentation', 'status', 'subcategory', 'subcategory_detail', 'category', 'slug'
         ]
         extra_kwargs = {
             'name': {'required': True},
-            'price': {'required': True},
-            # 'subcategory': {'required': True},  # Remove this line so subcategory is not required
+            'price': {'required': False, 'allow_null': True},
+            'description': {'required': False, 'allow_blank': True},
+            'documentation': {'required': False, 'allow_blank': True},
         }
 
     def get_subcategory_slug(self, obj):
@@ -62,6 +73,14 @@ class ProductSerializer(serializers.ModelSerializer):
             return '/media/' + doc.lstrip('/')
         return None
 
+    def get_category(self, obj):
+        if obj.subcategory and obj.subcategory.category:
+            return CategoryMiniSerializer(obj.subcategory.category).data
+        return None
+
+    def get_specifications_table(self, obj):
+        return obj.get_specifications_table() if hasattr(obj, 'get_specifications_table') else []
+
     def to_internal_value(self, data):
         subcategory_value = data.get('subcategory')
         if subcategory_value and not str(subcategory_value).isdigit():
@@ -77,7 +96,7 @@ class ProductSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         request = self.context.get('request')
         image_field = getattr(instance, 'image', None)
-        if image_field and image_field.name:
+        if image_field and getattr(image_field, 'url', None):
             url = image_field.url
             if request is not None:
                 rep['image'] = request.build_absolute_uri(url)
@@ -85,13 +104,34 @@ class ProductSerializer(serializers.ModelSerializer):
                 rep['image'] = url
         else:
             rep['image'] = None
+        # Handle missing or empty price values
+        if rep.get('price') in [None, '']:
+            rep['price'] = None
         return rep
 
     def validate(self, data):
         errors = {}
-        for field in ['name', 'price']:
-            if not data.get(field):
-                errors[field] = f"This field is required."
+        if not data.get('name'):
+            errors['name'] = "This field is required."
+        # price is now optional, so no validation error if missing
         if errors:
             raise serializers.ValidationError(errors)
-        return data 
+        return data
+
+    def create(self, validated_data):
+        specifications_data = validated_data.pop('specifications', [])
+        product = Product.objects.create(**validated_data)
+        for spec in specifications_data:
+            ProductSpecification.objects.create(product=product, **spec)
+        return product
+
+    def update(self, instance, validated_data):
+        specifications_data = validated_data.pop('specifications', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if specifications_data is not None:
+            instance.specifications.all().delete()
+            for spec in specifications_data:
+                ProductSpecification.objects.create(product=instance, **spec)
+        return instance 

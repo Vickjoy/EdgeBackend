@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from django.http import Http404
 from rest_framework import serializers
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import action
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
@@ -104,6 +105,22 @@ class ProductViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+    @action(detail=False, methods=['get'], url_path='all-categories')
+    def all_categories(self, request):
+        from .models import Category
+        from .serializers import CategoryMiniSerializer
+        queryset = Category.objects.all()
+        serializer = CategoryMiniSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='all-subcategories')
+    def all_subcategories(self, request):
+        from .models import Subcategory
+        from .serializers import SubcategoryMiniSerializer
+        queryset = Subcategory.objects.all()
+        serializer = SubcategoryMiniSerializer(queryset, many=True)
+        return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
