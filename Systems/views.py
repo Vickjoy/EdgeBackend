@@ -1,125 +1,142 @@
-from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework import viewsets, status, serializers
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import get_object_or_404
 from .models import Category, Subcategory, Product
 from .serializers import CategorySerializer, SubcategorySerializer, ProductSerializer
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from django.http import Http404
-from rest_framework import serializers
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.decorators import action
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    lookup_field = 'slug'
+
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        
+        try:
+            obj = get_object_or_404(queryset, **{self.lookup_field: self.kwargs[lookup_url_kwarg]})
+            self.check_object_permissions(self.request, obj)
+            return obj
+        except Http404:
+            raise serializers.ValidationError({"detail": "Category not found."})
 
 class SubcategoryViewSet(viewsets.ModelViewSet):
     queryset = Subcategory.objects.all()
     serializer_class = SubcategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    lookup_field = 'slug'
 
     def get_queryset(self):
+        queryset = super().get_queryset()
         category_slug = self.kwargs.get('category_slug')
+        
         if category_slug:
-            return Subcategory.objects.filter(category__slug=category_slug)
-        return Subcategory.objects.all()
+            category = get_object_or_404(Category, slug=category_slug)
+            return queryset.filter(category=category)
+        return queryset
 
     def perform_create(self, serializer):
         category_slug = self.kwargs.get('category_slug')
         category_id = self.kwargs.get('category_pk')
-        category = None
+        
         if category_slug:
-            try:
-                category = Category.objects.get(slug=category_slug)
-            except Category.DoesNotExist:
-                raise serializers.ValidationError("Category not found")
+            category = get_object_or_404(Category, slug=category_slug)
         elif category_id:
             try:
                 if str(category_id).isdigit():
-                    category = Category.objects.get(id=category_id)
+                    category = get_object_or_404(Category, id=category_id)
                 else:
-                    category = Category.objects.get(slug=category_id)
-            except Category.DoesNotExist:
-                raise serializers.ValidationError("Category not found")
-        if category is not None:
-            serializer.save(category=category)
+                    category = get_object_or_404(Category, slug=category_id)
+            except ValueError:
+                raise serializers.ValidationError({"detail": "Invalid category ID."})
         else:
-            raise serializers.ValidationError("Category not found in URL.")
+            raise serializers.ValidationError({"detail": "Category not specified."})
+        
+        serializer.save(category=category)
+
+    def get_object(self):
+        try:
+            return super().get_object()
+        except Http404:
+            raise serializers.ValidationError({"detail": "Subcategory not found."})
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
-    lookup_field = 'slug'  # Use slug for lookups instead of id
+    lookup_field = 'slug'
 
     def get_queryset(self):
-        # Prefer explicit slug
+        queryset = super().get_queryset()
         subcategory_slug = self.kwargs.get('subcategory_slug')
-        if subcategory_slug:
-            try:
-                subcategory = Subcategory.objects.get(slug=subcategory_slug)
-            except Subcategory.DoesNotExist:
-                raise Http404("Subcategory not found")
-            return Product.objects.filter(subcategory_id=subcategory.id)
-        # Handle nested router case where subcategory_pk may be a slug or an ID
         subcategory_pk = self.kwargs.get('subcategory_pk')
+        
+        if subcategory_slug:
+            subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
+            return queryset.filter(subcategory=subcategory)
+        
         if subcategory_pk:
             try:
                 if str(subcategory_pk).isdigit():
-                    subcategory = Subcategory.objects.get(id=subcategory_pk)
+                    subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
                 else:
-                    subcategory = Subcategory.objects.get(slug=subcategory_pk)
-            except Subcategory.DoesNotExist:
-                raise Http404("Subcategory not found")
-            return Product.objects.filter(subcategory_id=subcategory.id)
-        return Product.objects.all()
+                    subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
+            except ValueError:
+                raise serializers.ValidationError({"detail": "Invalid subcategory ID."})
+            return queryset.filter(subcategory=subcategory)
+        
+        return queryset
+
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data)
+        except Http404:
+            return Response(
+                {"detail": "Product not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
     def perform_create(self, serializer):
         subcategory_slug = self.kwargs.get('subcategory_slug')
-        subcategory_id = self.kwargs.get('subcategory_pk')
-        subcategory = None
-        # Prefer explicit slug
+        subcategory_pk = self.kwargs.get('subcategory_pk')
+        
         if subcategory_slug:
+            subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
+        elif subcategory_pk:
             try:
-                subcategory = Subcategory.objects.get(slug=subcategory_slug)
-            except Subcategory.DoesNotExist:
-                raise serializers.ValidationError("Subcategory not found")
-        # If subcategory_pk is present, check if it's numeric (ID) or a slug
-        elif subcategory_id:
-            try:
-                if str(subcategory_id).isdigit():
-                    subcategory = Subcategory.objects.get(id=subcategory_id)
+                if str(subcategory_pk).isdigit():
+                    subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
                 else:
-                    subcategory = Subcategory.objects.get(slug=subcategory_id)
-            except Subcategory.DoesNotExist:
-                raise serializers.ValidationError("Subcategory not found")
-        if subcategory is not None:
-            serializer.save(subcategory=subcategory)
+                    subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
+            except ValueError:
+                raise serializers.ValidationError({"detail": "Invalid subcategory ID."})
         else:
-            raise serializers.ValidationError("Subcategory not found in URL.")
+            raise serializers.ValidationError({"detail": "Subcategory not specified."})
+        
+        serializer.save(subcategory=subcategory)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
 
-    @action(detail=False, methods=['get'], url_path='all-categories')
+    @action(detail=False, methods=['get'])
     def all_categories(self, request):
-        from .models import Category
-        from .serializers import CategoryMiniSerializer
-        queryset = Category.objects.all()
-        serializer = CategoryMiniSerializer(queryset, many=True)
+        categories = Category.objects.all()
+        serializer = CategorySerializer(categories, many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], url_path='all-subcategories')
+    @action(detail=False, methods=['get'])
     def all_subcategories(self, request):
-        from .models import Subcategory
-        from .serializers import SubcategoryMiniSerializer
-        queryset = Subcategory.objects.all()
-        serializer = SubcategoryMiniSerializer(queryset, many=True)
+        subcategories = Subcategory.objects.all()
+        serializer = SubcategorySerializer(subcategories, many=True, context={'request': request})
         return Response(serializer.data)
 
 @api_view(['GET'])

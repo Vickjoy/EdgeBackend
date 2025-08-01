@@ -1,24 +1,49 @@
 from rest_framework_nested import routers
 from .views import CategoryViewSet, SubcategoryViewSet, ProductViewSet, me_view
-from django.urls import path
+from django.urls import path, include
 
+# Main router
 router = routers.DefaultRouter()
 router.register(r'categories', CategoryViewSet, basename='category')
-# router.register(r'subcategories', SubcategoryViewSet, basename='subcategory')  # Removed global subcategories endpoint
+router.register(r'subcategories', SubcategoryViewSet, basename='subcategory')
 router.register(r'products', ProductViewSet, basename='product')
 
-# Nested router for subcategories under categories
+# Nested routers (same as before)
 categories_router = routers.NestedDefaultRouter(router, r'categories', lookup='category')
 categories_router.register(r'subcategories', SubcategoryViewSet, basename='category-subcategories')
 
-# Removed nested router for products under subcategories
-# subcategories_router = routers.NestedDefaultRouter(router, r'subcategories', lookup='subcategory')
-# subcategories_router.register(r'products', ProductViewSet, basename='subcategory-products')
+subcategories_router = routers.NestedDefaultRouter(router, r'subcategories', lookup='subcategory')
+subcategories_router.register(r'products', ProductViewSet, basename='subcategory-products')
 
-urlpatterns = router.urls + categories_router.urls  # Removed subcategories_router.urls
-urlpatterns += [
+urlpatterns = [
+    # Include routers
+    path('', include(router.urls)),
+    path('', include(categories_router.urls)),
+    path('', include(subcategories_router.urls)),
+
+    # Me view
     path('me/', me_view, name='me'),
-    path('categories/<slug:category_slug>/subcategories/', SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}), name='subcategory-by-category-slug'),
-    path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='subcategory-detail-by-category'),
-    path('subcategories/<slug:subcategory_slug>/products/', ProductViewSet.as_view({'get': 'list', 'post': 'create'}), name='product-by-subcategory-slug'),
-] 
+
+    # Slug-based URL patterns - REORDERED to ensure proper matching
+    # Direct product detail should come first
+    path('products/<slug:slug>/',
+         ProductViewSet.as_view({'get': 'retrieve'}),
+         name='product-detail-direct'),
+
+    # Then other slug-based patterns
+    path('categories/<slug:category_slug>/subcategories/',
+         SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}),
+         name='subcategory-by-category-slug'),
+
+    path('categories/<slug:category_slug>/subcategories/<slug:slug>/',
+         SubcategoryViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
+         name='subcategory-detail-by-slug'),
+
+    path('subcategories/<slug:subcategory_slug>/products/',
+         ProductViewSet.as_view({'get': 'list', 'post': 'create'}),
+         name='product-by-subcategory-slug'),
+
+    path('subcategories/<slug:subcategory_slug>/products/<slug:slug>/',
+         ProductViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
+         name='product-detail-by-slug'),
+]

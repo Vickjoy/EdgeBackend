@@ -39,13 +39,15 @@ class ProductSerializer(serializers.ModelSerializer):
     subcategory_slug = serializers.SerializerMethodField()
     category_slug = serializers.SerializerMethodField()
     documentation_url = serializers.SerializerMethodField()
+    
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'price', 'description', 'image', 'specifications',
             'specifications_table',
-            'documentation', 'status', 'subcategory', 'subcategory_detail', 'category', 'slug'
+            'documentation', 'status', 'subcategory', 'subcategory_detail', 'category', 'slug', 'subcategory_slug',
+            'category_slug', 'documentation_url'
         ]
         extra_kwargs = {
             'name': {'required': True},
