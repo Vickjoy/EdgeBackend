@@ -1,60 +1,98 @@
 from rest_framework import serializers
-from .models import Category, Subcategory, Product, ProductSpecification
+from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
+import os
+from decimal import Decimal
 
+
+# --- SUBCATEGORY MINI SERIALIZER ---
+class SubcategoryMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subcategory
+        fields = ['id', 'name', 'slug']
+
+
+# --- CATEGORY SERIALIZERS ---
 class CategorySerializer(serializers.ModelSerializer):
-    # 'type' field is included and validated (choices: 'fire', 'ict')
+    subcategories = SubcategoryMiniSerializer(many=True, read_only=True)
+
     class Meta:
         model = Category
-        fields = ['id', 'name', 'type', 'slug']
+        fields = ['id', 'name', 'type', 'slug', 'subcategories']
+
 
 class CategoryMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name', 'slug']
 
+
+# --- SUBCATEGORY SERIALIZERS ---
 class SubcategorySerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(read_only=True)
+
     class Meta:
         model = Subcategory
         fields = ['id', 'name', 'slug', 'category']
 
-class SubcategoryMiniSerializer(serializers.ModelSerializer):
-    category = CategoryMiniSerializer()
-    class Meta:
-        model = Subcategory
-        fields = ['id', 'name', 'slug', 'category']
 
-class ProductSpecificationSerializer(serializers.ModelSerializer):
+# --- SPECIFICATION SERIALIZERS ---
+class SpecificationRowSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ProductSpecification
+        model = SpecificationRow
         fields = ['key', 'value']
 
+
+class SpecificationTableSerializer(serializers.ModelSerializer):
+    rows = SpecificationRowSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SpecificationTable
+        fields = ['title', 'rows']
+
+
+# --- PRODUCT SERIALIZER ---
 class ProductSerializer(serializers.ModelSerializer):
-    image = serializers.ImageField(required=False, allow_null=True)
-    subcategory = serializers.PrimaryKeyRelatedField(queryset=Subcategory.objects.all(), required=True, write_only=True)
+    image = serializers.SerializerMethodField()
+    price = serializers.SerializerMethodField()
+    subcategory = serializers.PrimaryKeyRelatedField(
+        queryset=Subcategory.objects.all(),
+        required=True,
+        write_only=True
+    )
     subcategory_detail = SubcategoryMiniSerializer(source='subcategory', read_only=True)
     category = serializers.SerializerMethodField(read_only=True)
-    specifications = ProductSpecificationSerializer(many=True)
-    specifications_table = serializers.SerializerMethodField(read_only=True)
+    spec_tables = SpecificationTableSerializer(many=True, read_only=True)
     subcategory_slug = serializers.SerializerMethodField()
     category_slug = serializers.SerializerMethodField()
     documentation_url = serializers.SerializerMethodField()
-    
+    documentation_label = serializers.SerializerMethodField()
+    features = serializers.CharField(required=False, allow_blank=True)
+
+    CLOUDINARY_BASE_URL = 'https://res.cloudinary.com/ddwpy1x3v/'
 
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'price', 'description', 'image', 'specifications',
-            'specifications_table',
-            'documentation', 'status', 'subcategory', 'subcategory_detail', 'category', 'slug', 'subcategory_slug',
-            'category_slug', 'documentation_url'
+            'id', 'name', 'price', 'description', 'features', 'image',
+            'spec_tables', 'documentation', 'documentation_url', 'documentation_label',
+            'status', 'subcategory', 'subcategory_detail',
+            'category', 'slug', 'subcategory_slug', 'category_slug'
         ]
-        extra_kwargs = {
-            'name': {'required': True},
-            'price': {'required': False, 'allow_null': True},
-            'description': {'required': False, 'allow_blank': True},
-            'documentation': {'required': False, 'allow_blank': True},
-        }
+
+    # --- PRICE FIX ---
+    def get_price(self, obj):
+        return float(obj.price) if obj.price is not None else 0.00
+
+    # --- IMAGE URL FIX ---
+    def get_image(self, obj):
+        if obj.image:
+            url = str(obj.image)
+            # If already full URL, return as-is
+            if url.startswith('http://') or url.startswith('https://'):
+                return url
+            # Otherwise prepend Cloudinary base URL
+            return self.CLOUDINARY_BASE_URL + url
+        return None
 
     def get_subcategory_slug(self, obj):
         return obj.subcategory.slug if obj.subcategory else None
@@ -63,77 +101,37 @@ class ProductSerializer(serializers.ModelSerializer):
         return obj.subcategory.category.slug if obj.subcategory and obj.subcategory.category else None
 
     def get_documentation_url(self, obj):
-        doc = obj.documentation
-        request = self.context.get('request')
-        if doc:
-            # If it looks like a URL, return as is
-            if doc.startswith('http://') or doc.startswith('https://'):
-                return doc
-            # If it looks like a file path, build full URL
-            if request is not None:
-                return request.build_absolute_uri('/media/' + doc.lstrip('/'))
-            return '/media/' + doc.lstrip('/')
+        # Return the URL directly since it's now stored as a URL field
+        return obj.documentation if obj.documentation else None
+
+    def get_documentation_label(self, obj):
+        # Return the custom label or extract filename from URL
+        if obj.documentation:
+            if obj.documentation_label:
+                return obj.documentation_label
+            else:
+                # Extract filename from URL keeping the original format
+                import re
+                from urllib.parse import urlparse
+                
+                try:
+                    # Parse the URL to get the path
+                    parsed_url = urlparse(obj.documentation)
+                    filename = os.path.basename(parsed_url.path)
+                    
+                    # Remove file extension but keep original formatting
+                    filename_without_ext = os.path.splitext(filename)[0]
+                    
+                    # Return the filename as-is (with hyphens, etc.)
+                    if filename_without_ext.strip():
+                        return filename_without_ext
+                    else:
+                        return "View Documentation"
+                except:
+                    return "View Documentation"
         return None
 
     def get_category(self, obj):
         if obj.subcategory and obj.subcategory.category:
             return CategoryMiniSerializer(obj.subcategory.category).data
         return None
-
-    def get_specifications_table(self, obj):
-        return obj.get_specifications_table() if hasattr(obj, 'get_specifications_table') else []
-
-    def to_internal_value(self, data):
-        subcategory_value = data.get('subcategory')
-        if subcategory_value and not str(subcategory_value).isdigit():
-            try:
-                subcategory = Subcategory.objects.get(slug=subcategory_value)
-                data = data.copy()
-                data['subcategory'] = subcategory.id
-            except Subcategory.DoesNotExist:
-                raise serializers.ValidationError({'subcategory': 'Subcategory not found.'})
-        return super().to_internal_value(data)
-
-    def to_representation(self, instance):
-        rep = super().to_representation(instance)
-        request = self.context.get('request')
-        image_field = getattr(instance, 'image', None)
-        if image_field and getattr(image_field, 'url', None):
-            url = image_field.url
-            if request is not None:
-                rep['image'] = request.build_absolute_uri(url)
-            else:
-                rep['image'] = url
-        else:
-            rep['image'] = None
-        # Handle missing or empty price values
-        if rep.get('price') in [None, '']:
-            rep['price'] = None
-        return rep
-
-    def validate(self, data):
-        errors = {}
-        if not data.get('name'):
-            errors['name'] = "This field is required."
-        # price is now optional, so no validation error if missing
-        if errors:
-            raise serializers.ValidationError(errors)
-        return data
-
-    def create(self, validated_data):
-        specifications_data = validated_data.pop('specifications', [])
-        product = Product.objects.create(**validated_data)
-        for spec in specifications_data:
-            ProductSpecification.objects.create(product=product, **spec)
-        return product
-
-    def update(self, instance, validated_data):
-        specifications_data = validated_data.pop('specifications', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        if specifications_data is not None:
-            instance.specifications.all().delete()
-            for spec in specifications_data:
-                ProductSpecification.objects.create(product=instance, **spec)
-        return instance 

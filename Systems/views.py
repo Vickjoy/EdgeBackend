@@ -1,3 +1,4 @@
+from django.http import Http404
 from rest_framework import viewsets, status, serializers
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes, action
