@@ -1,11 +1,9 @@
 from django.db import models
 from django.utils.text import slugify
 
-
 class Category(models.Model):
     FIRE_SAFETY = 'fire_safety'
     ICT = 'ict'
-
     CATEGORY_TYPES = [
         (FIRE_SAFETY, 'Fire Safety'),
         (ICT, 'ICT'),
@@ -29,7 +27,6 @@ class Category(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_type_display()})"
 
-
 class Subcategory(models.Model):
     category = models.ForeignKey(Category, related_name='subcategories', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
@@ -49,11 +46,24 @@ class Subcategory(models.Model):
     def __str__(self):
         return f"{self.name} ({self.category.name})"
 
-
 class Product(models.Model):
+    # Price visibility choices
+    PUBLIC = 'public'
+    LOGIN_REQUIRED = 'login_required'
+    PRICE_VISIBILITY_CHOICES = [
+        (PUBLIC, 'Public'),
+        (LOGIN_REQUIRED, 'Login Required'),
+    ]
+
     subcategory = models.ForeignKey(Subcategory, related_name='products', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    price_visibility = models.CharField(
+        max_length=20, 
+        choices=PRICE_VISIBILITY_CHOICES, 
+        default=PUBLIC,
+        help_text="Choose who can see the price of this product"
+    )
     description = models.TextField(blank=True)
     features = models.TextField(blank=True)
     image = models.ImageField(upload_to='products/', null=True, blank=True)
@@ -77,7 +87,6 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
-
 class SpecificationTable(models.Model):
     """
     Each product can have multiple specification tables.
@@ -89,13 +98,12 @@ class SpecificationTable(models.Model):
     def __str__(self):
         return f"{self.title or 'Untitled Table'} - {self.product.name}"
 
-
 class SpecificationRow(models.Model):
     """
     Each row belongs to one SpecificationTable.
     Rows are stored as key/value pairs.
     Example:
-        key="Model", value="Eaton Addressable fire detector"
+    key="Model", value="Eaton Addressable fire detector"
     """
     table = models.ForeignKey(SpecificationTable, related_name='rows', on_delete=models.CASCADE)
     key = models.CharField(max_length=255, blank=True, null=True)

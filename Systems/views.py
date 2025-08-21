@@ -1,9 +1,12 @@
 from django.http import Http404
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
 from rest_framework import viewsets, status, serializers
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.authtoken.models import Token
 from django.shortcuts import get_object_or_404
 from .models import Category, Subcategory, Product
 from .serializers import CategorySerializer, SubcategorySerializer, ProductSerializer
@@ -150,4 +153,150 @@ def me_view(request):
         'email': user.email,
         'is_staff': user.is_staff,
         'is_superuser': user.is_superuser,
+    })
+
+# Authentication Views
+@api_view(['POST'])
+def register_view(request):
+    """
+    User registration endpoint
+    Expected payload: {"username": "...", "email": "...", "password": "..."}
+    """
+    try:
+        username = request.data.get('username')
+        email = request.data.get('email')
+        password = request.data.get('password')
+        
+        if not username or not password:
+            return Response(
+                {"error": "Username and password are required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {"error": "Username already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if email and User.objects.filter(email=email).exists():
+            return Response(
+                {"error": "Email already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = User.objects.create_user(
+            username=username,
+            email=email or '',
+            password=password
+        )
+        
+        # Create or get token for the user
+        token, created = Token.objects.get_or_create(user=user)
+        
+        return Response({
+            "message": "User created successfully",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email
+            },
+            "token": token.key
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+def login_view(request):
+    """
+    User login endpoint
+    Expected payload: {"username": "...", "password": "..."}
+    """
+    try:
+        username = request.data.get('username')
+        password = request.data.get('password')
+        
+        if not username or not password:
+            return Response(
+                {"error": "Username and password are required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = authenticate(username=username, password=password)
+        
+        if user is not None:
+            login(request, user)
+            
+            # Get or create token
+            token, created = Token.objects.get_or_create(user=user)
+            
+            return Response({
+                "message": "Login successful",
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "is_staff": user.is_staff,
+                    "is_superuser": user.is_superuser,
+                },
+                "token": token.key
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response(
+                {"error": "Invalid credentials"}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    """
+    User logout endpoint - requires authentication
+    """
+    try:
+        # Delete the user's token
+        try:
+            token = Token.objects.get(user=request.user)
+            token.delete()
+        except Token.DoesNotExist:
+            pass
+        
+        logout(request)
+        
+        return Response(
+            {"message": "Logout successful"}, 
+            status=status.HTTP_200_OK
+        )
+        
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_user_view(request):
+    """
+    Get current authenticated user details
+    """
+    user = request.user
+    return Response({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'is_staff': user.is_staff,
+        'is_superuser': user.is_superuser,
+        'date_joined': user.date_joined,
+        'last_login': user.last_login,
     })

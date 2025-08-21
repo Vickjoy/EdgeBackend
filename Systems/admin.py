@@ -5,12 +5,10 @@ from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
 from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
 
-
 # Inlines for nested specifications
 class SpecificationRowInline(admin.TabularInline):
     model = SpecificationRow
     extra = 1
-
 
 class SpecificationTableInline(admin.StackedInline):
     model = SpecificationTable
@@ -18,28 +16,24 @@ class SpecificationTableInline(admin.StackedInline):
     show_change_link = True
     inlines = [SpecificationRowInline]
 
-
 class SubcategoryInline(admin.TabularInline):
     model = Subcategory
     extra = 1
 
-
 class ProductInline(admin.TabularInline):
     model = Product
     extra = 1
-
 
 # Category Admin
 class CategoryAdmin(admin.ModelAdmin):
     inlines = [SubcategoryInline]
     list_display = ('name', 'slug')
     readonly_fields = ('slug',)
-    
+
     def get_readonly_fields(self, request, obj=None):
         if obj:  # editing an existing object
             return self.readonly_fields + ('slug',)
         return self.readonly_fields
-
 
 # Subcategory Admin
 class SubcategoryAdmin(admin.ModelAdmin):
@@ -47,12 +41,11 @@ class SubcategoryAdmin(admin.ModelAdmin):
     list_display = ('name', 'category', 'slug')
     list_filter = ('category',)
     readonly_fields = ('slug',)
-    
+
     def get_readonly_fields(self, request, obj=None):
         if obj:  # editing an existing object
             return self.readonly_fields + ('slug',)
         return self.readonly_fields
-
 
 # Import-export resource for products
 class ProductResource(resources.ModelResource):
@@ -63,7 +56,7 @@ class ProductResource(resources.ModelResource):
         model = Product
         import_id_fields = ['slug']
         fields = (
-            'name', 'price', 'description', 'documentation', 'documentation_label',
+            'name', 'price', 'price_visibility', 'description', 'documentation', 'documentation_label',
             'status', 'image', 'slug', 'subcategory', 'category'
         )
         skip_unchanged = True
@@ -72,6 +65,7 @@ class ProductResource(resources.ModelResource):
     def before_import_row(self, row, **kwargs):
         category_name = row.get('category')
         subcategory_name = row.get('subcategory')
+
         try:
             category = Category.objects.get(name=category_name)
             subcategory = Subcategory.objects.get(name=subcategory_name, category=category)
@@ -81,16 +75,21 @@ class ProductResource(resources.ModelResource):
         except Subcategory.DoesNotExist:
             raise Exception(f"Subcategory '{subcategory_name}' under '{category_name}' not found.")
 
-
 # Product Admin
 class ProductAdmin(ImportExportModelAdmin):
     resource_class = ProductResource
     inlines = [SpecificationTableInline]
-    list_display = ('name', 'subcategory', 'get_category', 'price', 'status', 'image_preview', 'documentation_preview')
+    list_display = ('name', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'image_preview', 'documentation_preview')
+    list_filter = ('price_visibility', 'status', 'subcategory__category')
     readonly_fields = ('get_category', 'image_preview', 'slug')
+    
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'slug', 'subcategory', 'price', 'status', 'stock')
+            'fields': ('name', 'slug', 'subcategory', 'status', 'stock')
+        }),
+        ('Pricing', {
+            'fields': ('price', 'price_visibility'),
+            'description': 'Set the price and choose who can see it.'
         }),
         ('Content', {
             'fields': ('description', 'features', 'image')
@@ -104,7 +103,7 @@ class ProductAdmin(ImportExportModelAdmin):
     def get_category(self, obj):
         return obj.subcategory.category if obj.subcategory else None
     get_category.short_description = 'Category'
-    
+
     def image_preview(self, obj):
         if obj.image:
             try:
@@ -117,19 +116,18 @@ class ProductAdmin(ImportExportModelAdmin):
                 return "Image Error"
         return "No Image"
     image_preview.short_description = 'Image Preview'
-    
+
     def documentation_preview(self, obj):
         if obj.documentation:
             label = obj.documentation_label or 'View Documentation'
             return mark_safe(f'<a href="{obj.documentation}" target="_blank">{label}</a>')
         return "No Documentation"
     documentation_preview.short_description = 'Documentation'
-    
+
     def get_readonly_fields(self, request, obj=None):
         if obj:  # editing an existing object
             return self.readonly_fields + ('slug',)
         return self.readonly_fields
-
 
 # Register models
 admin.site.register(Category, CategoryAdmin)

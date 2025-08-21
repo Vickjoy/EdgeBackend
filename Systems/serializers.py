@@ -3,15 +3,13 @@ from .models import Category, Subcategory, Product, SpecificationTable, Specific
 import os
 from decimal import Decimal
 
-
-# --- SUBCATEGORY MINI SERIALIZER ---
+# -- SUBCATEGORY MINI SERIALIZER --
 class SubcategoryMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subcategory
         fields = ['id', 'name', 'slug']
 
-
-# --- CATEGORY SERIALIZERS ---
+# -- CATEGORY SERIALIZERS --
 class CategorySerializer(serializers.ModelSerializer):
     subcategories = SubcategoryMiniSerializer(many=True, read_only=True)
 
@@ -19,14 +17,12 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name', 'type', 'slug', 'subcategories']
 
-
 class CategoryMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name', 'slug']
 
-
-# --- SUBCATEGORY SERIALIZERS ---
+# -- SUBCATEGORY SERIALIZERS --
 class SubcategorySerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -34,13 +30,11 @@ class SubcategorySerializer(serializers.ModelSerializer):
         model = Subcategory
         fields = ['id', 'name', 'slug', 'category']
 
-
-# --- SPECIFICATION SERIALIZERS ---
+# -- SPECIFICATION SERIALIZERS --
 class SpecificationRowSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecificationRow
         fields = ['key', 'value']
-
 
 class SpecificationTableSerializer(serializers.ModelSerializer):
     rows = SpecificationRowSerializer(many=True, read_only=True)
@@ -49,11 +43,11 @@ class SpecificationTableSerializer(serializers.ModelSerializer):
         model = SpecificationTable
         fields = ['title', 'rows']
 
-
-# --- PRODUCT SERIALIZER ---
+# -- PRODUCT SERIALIZER --
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     price = serializers.SerializerMethodField()
+    price_requires_login = serializers.SerializerMethodField()
     subcategory = serializers.PrimaryKeyRelatedField(
         queryset=Subcategory.objects.all(),
         required=True,
@@ -73,17 +67,45 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'price', 'description', 'features', 'image',
+            'id', 'name', 'price', 'price_visibility', 'price_requires_login',
+            'description', 'features', 'image',
             'spec_tables', 'documentation', 'documentation_url', 'documentation_label',
             'status', 'subcategory', 'subcategory_detail',
             'category', 'slug', 'subcategory_slug', 'category_slug'
         ]
 
-    # --- PRICE FIX ---
+    # -- PRICE VISIBILITY LOGIC --
     def get_price(self, obj):
+        # Check if price should be visible based on user authentication and product settings
+        request = self.context.get('request')
+        
+        # If price_visibility is public, always show price
+        if obj.price_visibility == Product.PUBLIC:
+            return float(obj.price) if obj.price is not None else 0.00
+        
+        # If price_visibility is login_required, check if user is authenticated
+        elif obj.price_visibility == Product.LOGIN_REQUIRED:
+            if request and request.user and request.user.is_authenticated:
+                # User is logged in, show price
+                return float(obj.price) if obj.price is not None else 0.00
+            else:
+                # User is not logged in, don't show price
+                return None
+        
+        # Default case
         return float(obj.price) if obj.price is not None else 0.00
 
-    # --- IMAGE URL FIX ---
+    def get_price_requires_login(self, obj):
+        # Return True if price requires login and user is not authenticated
+        request = self.context.get('request')
+        
+        if obj.price_visibility == Product.LOGIN_REQUIRED:
+            if not request or not request.user or not request.user.is_authenticated:
+                return True
+        
+        return False
+
+    # -- IMAGE URL FIX --
     def get_image(self, obj):
         if obj.image:
             url = str(obj.image)
@@ -113,15 +135,12 @@ class ProductSerializer(serializers.ModelSerializer):
                 # Extract filename from URL keeping the original format
                 import re
                 from urllib.parse import urlparse
-                
                 try:
                     # Parse the URL to get the path
                     parsed_url = urlparse(obj.documentation)
                     filename = os.path.basename(parsed_url.path)
-                    
                     # Remove file extension but keep original formatting
                     filename_without_ext = os.path.splitext(filename)[0]
-                    
                     # Return the filename as-is (with hyphens, etc.)
                     if filename_without_ext.strip():
                         return filename_without_ext
