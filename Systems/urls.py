@@ -1,9 +1,12 @@
 from rest_framework_nested import routers
 from .views import (
-    CategoryViewSet, SubcategoryViewSet, ProductViewSet, 
-    me_view, register_view, login_view, logout_view, current_user_view
+    CategoryViewSet, SubcategoryViewSet, ProductViewSet,
+    me_view, register_view, login_view, logout_view, current_user_view,
+    CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
+    ProductDetailView
 )
 from django.urls import path, include
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 # Main router
 router = routers.DefaultRouter()
@@ -24,19 +27,12 @@ urlpatterns = [
     path('', include(categories_router.urls)),
     path('', include(subcategories_router.urls)),
 
-    # 🔑 Custom API authentication endpoints (JSON-based)
-    path('auth/register/', register_view, name='api_register'),
-    path('auth/login/', login_view, name='custom_api_login'),   # renamed
-    path('auth/logout/', logout_view, name='custom_api_logout'), # renamed
-    path('auth/user/', current_user_view, name='current_user'),
+    # (legacy) custom API auth endpoints not used by frontend but kept for compatibility
+    # path('auth/logout/', logout_view, name='custom_api_logout'),
+    # path('auth/user/', current_user_view, name='current_user'),
 
-    # Me endpoint
-    path('me/', me_view, name='me'),
-
-    # Slug-based endpoints
-    path('products/<slug:slug>/',
-         ProductViewSet.as_view({'get': 'retrieve'}),
-         name='product-detail-direct'),
+    # Slug-based endpoints for public product and nested browsing
+    # removed overlapping slug route to honor /products/<slug:product_slug>/
 
     path('categories/<slug:category_slug>/subcategories/',
          SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}),
@@ -53,4 +49,24 @@ urlpatterns = [
     path('subcategories/<slug:subcategory_slug>/products/<slug:slug>/',
          ProductViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
          name='product-detail-by-slug'),
+
+    # JWT endpoints (added)
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # --- Contract-specific endpoints ---
+    # Auth endpoints (SimpleJWT)
+    path('auth/register/', register_view),  # returns tokens on 201
+    path('auth/login/', login_view),        # returns access/refresh
+    path('me/', me_view),                   # returns user data
+
+    # Product endpoints
+    path('subcategories/<slug:subcategory_slug>/products/',
+         ProductViewSet.as_view({'get': 'list', 'post': 'create'})),
+    path('products/<slug:product_slug>/', ProductDetailView.as_view(), name='product-detail-contract'),
+
+    # Admin-only endpoints (pk based updates/deletes)
+    path('categories/<int:pk>/', CategoryAdminDetailView.as_view()),
+    path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryAdminDetailView.as_view()),
+    path('products/<int:pk>/', ProductAdminDetailView.as_view()),
 ]

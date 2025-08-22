@@ -1,4 +1,5 @@
 from pathlib import Path
+from corsheaders.defaults import default_headers
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -87,6 +88,8 @@ USE_TZ = True
 
 # Static files
 STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -107,20 +110,27 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",   # your current frontend (Vite)
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",   # React default port
-    "http://127.0.0.1:3000",
-    # Add your production frontend URL here
-]
-
-# CSRF Configuration
-CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # Add your production frontend URL here
+]
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "authorization",
+    "content-type",
+]
+
+# CSRF Configuration
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 # Authentication backends
@@ -144,15 +154,17 @@ CLOUDINARY_STORAGE = {
 }
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
-# ✅ Updated: DRF Token Authentication (changed from JWT)
+# ✅ Use SimpleJWT for API authentication
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 12,
 }
 
 # Env for Cloudinary SDK

@@ -76,32 +76,21 @@ class ProductSerializer(serializers.ModelSerializer):
 
     # -- PRICE VISIBILITY LOGIC --
     def get_price(self, obj):
-        # Check if price should be visible based on user authentication and product settings
+        # Respect per-product price visibility
         request = self.context.get('request')
-        
-        # If price_visibility is public, always show price
-        if obj.price_visibility == Product.PUBLIC:
-            return float(obj.price) if obj.price is not None else 0.00
-        
-        # If price_visibility is login_required, check if user is authenticated
-        elif obj.price_visibility == Product.LOGIN_REQUIRED:
-            if request and request.user and request.user.is_authenticated:
-                # User is logged in, show price
-                return float(obj.price) if obj.price is not None else 0.00
-            else:
-                # User is not logged in, don't show price
-                return None
-        
-        # Default case
+        user_is_auth = bool(request and getattr(request, 'user', None) and request.user.is_authenticated)
+        if obj.price_visibility == Product.LOGIN_REQUIRED and not user_is_auth:
+            return None
         return float(obj.price) if obj.price is not None else 0.00
 
     def get_price_requires_login(self, obj):
         # Return True if price requires login and user is not authenticated
         request = self.context.get('request')
         
-        if obj.price_visibility == Product.LOGIN_REQUIRED:
-            if not request or not request.user or not request.user.is_authenticated:
-                return True
+        # True only when this product requires login and user is not authenticated
+        user_is_auth = bool(request and getattr(request, 'user', None) and request.user.is_authenticated)
+        if obj.price_visibility == Product.LOGIN_REQUIRED and not user_is_auth:
+            return True
         
         return False
 
@@ -154,3 +143,13 @@ class ProductSerializer(serializers.ModelSerializer):
         if obj.subcategory and obj.subcategory.category:
             return CategoryMiniSerializer(obj.subcategory.category).data
         return None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Normalize status for frontend: in_stock | out_of_stock
+        try:
+            stock = getattr(instance, 'stock', 0)
+            data['status'] = 'in_stock' if stock and stock > 0 else 'out_of_stock'
+        except Exception:
+            pass
+        return data
