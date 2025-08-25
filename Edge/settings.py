@@ -7,27 +7,34 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
 SECRET_KEY = 'django-insecure-i9na=!@xp!=3ieclqhcuajz26$k0=+ir_g*gq^se&wa%m#tc71'
-
 DEBUG = True
-
 ALLOWED_HOSTS = []
-
 
 # Application definition
 INSTALLED_APPS = [
+    # Django default apps
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Third-party apps
     'rest_framework',
-    'rest_framework.authtoken',  # ✅ Added for Token authentication
+    'rest_framework.authtoken',
     'corsheaders',
-    'Systems',
     'cloudinary',
     'cloudinary_storage',
     'import_export',
+
+    # Allauth apps
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',  # keep only if using social login
+
+    # Your apps
+    'Systems',
 ]
 
 MIDDLEWARE = [
@@ -39,6 +46,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',  # added for Allauth
 ]
 
 ROOT_URLCONF = 'Edge.urls'
@@ -50,7 +58,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
-                'django.template.context_processors.request',
+                'django.template.context_processors.request',  # required by Allauth
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
@@ -60,7 +68,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Edge.wsgi.application'
 
-
 # Database
 DATABASES = {
     'default': {
@@ -68,7 +75,6 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
-
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -78,13 +84,11 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
 # Internationalization
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
-
 
 # Static files
 STATIC_URL = 'static/'
@@ -93,12 +97,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
 # ===============================
-# ✅ Added Configurations
-# ===============================
-
 # Session Configuration
+# ===============================
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_COOKIE_HTTPONLY = True
@@ -117,11 +118,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    "authorization",
-    "content-type",
-]
+CORS_ALLOW_HEADERS = list(default_headers) + ["authorization", "content-type"]
 
 # CSRF Configuration
 CSRF_TRUSTED_ORIGINS = [
@@ -135,7 +132,8 @@ CSRF_TRUSTED_ORIGINS = [
 
 # Authentication backends
 AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',
+    'django.contrib.auth.backends.ModelBackend',  # default
+    'allauth.account.auth_backends.AuthenticationBackend',  # required by Allauth
 ]
 
 # Login/Logout redirect URLs
@@ -143,9 +141,8 @@ LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 
-
 # ===============================
-# ✅ Cloudinary configuration
+# Cloudinary configuration
 # ===============================
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': 'ddwpy1x3v',
@@ -154,7 +151,7 @@ CLOUDINARY_STORAGE = {
 }
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
-# ✅ Use SimpleJWT for API authentication
+# REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -171,3 +168,9 @@ REST_FRAMEWORK = {
 os.environ['CLOUDINARY_CLOUD_NAME'] = 'ddwpy1x3v'
 os.environ['CLOUDINARY_API_KEY'] = '796737964934249'
 os.environ['CLOUDINARY_API_SECRET'] = 'Kc2-_ihT9ZadSqdUllThmxrMZaM'
+
+# Allauth account settings (optional, but recommended)
+ACCOUNT_LOGIN_METHODS = {'username', 'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
+ACCOUNT_EMAIL_VERIFICATION = 'optional'
+ACCOUNT_USERNAME_REQUIRED = True
