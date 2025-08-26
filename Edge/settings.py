@@ -1,5 +1,6 @@
 from pathlib import Path
 from corsheaders.defaults import default_headers
+from datetime import timedelta
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -23,6 +24,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework.authtoken',
+    'rest_framework_simplejwt',  # Added JWT
     'corsheaders',
     'cloudinary',
     'cloudinary_storage',
@@ -32,7 +34,7 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.socialaccount', 
-    'allauth.socialaccount.providers.google', # keep only if using social login
+    'allauth.socialaccount.providers.google',
 
     # Your apps
     'Systems',
@@ -99,6 +101,15 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ===============================
+# JWT Configuration (Added from guide)
+# ===============================
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+}
+
+# ===============================
 # Session Configuration
 # ===============================
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
@@ -139,8 +150,8 @@ AUTHENTICATION_BACKENDS = [
 
 # Login/Logout redirect URLs
 LOGIN_URL = '/login/'
-LOGIN_REDIRECT_URL = '/'
-LOGOUT_REDIRECT_URL = '/'
+LOGIN_REDIRECT_URL = 'http://localhost:3000/'  # Your React app URL
+LOGOUT_REDIRECT_URL = 'http://localhost:3000/'
 
 # ===============================
 # Cloudinary configuration
@@ -152,12 +163,12 @@ CLOUDINARY_STORAGE = {
 }
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
-# REST Framework configuration
+# REST Framework configuration (Updated with JWT)
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
+    'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-    ],
+    ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ],
@@ -175,3 +186,15 @@ ACCOUNT_LOGIN_METHODS = {'username', 'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 
+# Google OAuth settings (from guide)
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        }
+    }
+}

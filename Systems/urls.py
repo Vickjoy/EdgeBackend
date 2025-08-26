@@ -1,12 +1,13 @@
 from rest_framework_nested import routers
 from .views import (
     CategoryViewSet, SubcategoryViewSet, ProductViewSet,
+    RegisterView, CustomTokenObtainPairView, UserProfileView,
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
-    ProductDetailView
+    ProductDetailView, ProductsBySubcategoryView
 )
 from django.urls import path, include
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 # Main router
 router = routers.DefaultRouter()
@@ -22,18 +23,30 @@ subcategories_router = routers.NestedDefaultRouter(router, r'subcategories', loo
 subcategories_router.register(r'products', ProductViewSet, basename='subcategory-products')
 
 urlpatterns = [
+    # -------------------------
+    # Authentication endpoints (as per the guide)
+    # -------------------------
+    path('register/', RegisterView.as_view(), name='register'),
+    path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('me/', UserProfileView.as_view(), name='user_profile'),
+    
+    # Legacy auth endpoints (for compatibility)
+    path('auth/register/', register_view, name='legacy_register'),
+    path('auth/login/', login_view, name='legacy_login'),
+    path('auth/logout/', logout_view, name='legacy_logout'),
+    path('auth/user/', current_user_view, name='current_user'),
+    
+    # -------------------------
     # Routers
+    # -------------------------
     path('', include(router.urls)),
     path('', include(categories_router.urls)),
     path('', include(subcategories_router.urls)),
 
-    # (legacy) custom API auth endpoints not used by frontend but kept for compatibility
-    # path('auth/logout/', logout_view, name='custom_api_logout'),
-    # path('auth/user/', current_user_view, name='current_user'),
-
-    # Slug-based endpoints for public product and nested browsing
-    # removed overlapping slug route to honor /products/<slug:product_slug>/
-
+    # -------------------------
+    # Slug-based endpoints for public browsing
+    # -------------------------
     path('categories/<slug:category_slug>/subcategories/',
          SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}),
          name='subcategory-by-category-slug'),
@@ -42,31 +55,28 @@ urlpatterns = [
          SubcategoryViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
          name='subcategory-detail-by-slug'),
 
+    # -------------------------
+    # Product endpoints (contract-specific)
+    # -------------------------
+    # Public product listing by subcategory
     path('subcategories/<slug:subcategory_slug>/products/',
-         ProductViewSet.as_view({'get': 'list', 'post': 'create'}),
-         name='product-by-subcategory-slug'),
+         ProductsBySubcategoryView.as_view(),
+         name='products-by-subcategory'),
+    
+    # Public product detail by slug
+    path('products/<slug:product_slug>/', 
+         ProductDetailView.as_view(), 
+         name='product-detail-contract'),
 
-    path('subcategories/<slug:subcategory_slug>/products/<slug:slug>/',
-         ProductViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
-         name='product-detail-by-slug'),
+    # Admin product creation by subcategory
+    path('subcategories/<slug:subcategory_slug>/products/create/',
+         ProductViewSet.as_view({'post': 'create'}),
+         name='product-create-by-subcategory'),
 
-    # JWT endpoints (added)
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-
-    # --- Contract-specific endpoints ---
-    # Auth endpoints (SimpleJWT)
-    path('auth/register/', register_view),  # returns tokens on 201
-    path('auth/login/', login_view),        # returns access/refresh
-    path('me/', me_view),                   # returns user data
-
-    # Product endpoints
-    path('subcategories/<slug:subcategory_slug>/products/',
-         ProductViewSet.as_view({'get': 'list', 'post': 'create'})),
-    path('products/<slug:product_slug>/', ProductDetailView.as_view(), name='product-detail-contract'),
-
+    # -------------------------
     # Admin-only endpoints (pk based updates/deletes)
-    path('categories/<int:pk>/', CategoryAdminDetailView.as_view()),
-    path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryAdminDetailView.as_view()),
-    path('products/<int:pk>/', ProductAdminDetailView.as_view()),
+    # -------------------------
+    path('categories/<int:pk>/', CategoryAdminDetailView.as_view(), name='category-admin-detail'),
+    path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryAdminDetailView.as_view(), name='subcategory-admin-detail'),
+    path('products/<int:pk>/', ProductAdminDetailView.as_view(), name='product-admin-detail'),
 ]

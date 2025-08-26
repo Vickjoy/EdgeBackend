@@ -1,7 +1,68 @@
 from rest_framework import serializers
+from django.contrib.auth.models import User
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth import authenticate
 from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
 import os
 from decimal import Decimal
+
+# -- USER AUTHENTICATION SERIALIZERS --
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    
+    class Meta:
+        model = User
+        fields = ('username', 'email', 'password', 'first_name', 'last_name')
+        
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+        
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A user with this username already exists.")
+        return value
+    
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        user = User.objects.create_user(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_superuser', 'date_joined')
+        read_only_fields = ('id', 'is_staff', 'is_superuser', 'date_joined')
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    username_field = 'username'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Allow login with either username or email
+        self.fields['username'] = serializers.CharField()
+        self.fields['password'] = serializers.CharField()
+    
+    def validate(self, attrs):
+        username = attrs.get('username')
+        password = attrs.get('password')
+        
+        # Try to find user by username first, then by email
+        user = None
+        if '@' in username:
+            # Looks like an email
+            try:
+                user_obj = User.objects.get(email=username)
+                username = user_obj.username
+            except User.DoesNotExist:
+                pass
+        
+        # Use the original validation with username
+        attrs['username'] = username
+        return super().validate(attrs)
 
 # -- SUBCATEGORY MINI SERIALIZER --
 class SubcategoryMiniSerializer(serializers.ModelSerializer):

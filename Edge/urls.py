@@ -26,6 +26,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('Systems.urls')),  # include your app's API urls
     path('', include(auth_urlpatterns)),    # include auth urls
+    path('accounts/', include('allauth.urls')),
 ]
 
 if settings.DEBUG:

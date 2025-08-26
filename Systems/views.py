@@ -2,15 +2,82 @@ from django.http import Http404
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, status, serializers
+from rest_framework import viewsets, status, serializers, generics, permissions
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Category, Subcategory, Product
-from .serializers import CategorySerializer, SubcategorySerializer, ProductSerializer
-from rest_framework import generics, permissions
+from .serializers import (
+    CategorySerializer, SubcategorySerializer, ProductSerializer,
+    UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer
+)
+
+# -------------------------
+# Authentication Views
+# -------------------------
+
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserRegistrationSerializer
+    permission_classes = [AllowAny]
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            # Generate tokens for auto-login after registration
+            refresh = RefreshToken.for_user(user)
+            access = refresh.access_token
+            
+            return Response({
+                'message': 'User created successfully',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email
+                },
+                'access': str(access),
+                'refresh': str(refresh)
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+    
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            return Response({
+                "error": "Invalid credentials"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        tokens = serializer.validated_data
+        user = serializer.user
+        
+        return Response({
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_staff": user.is_staff,
+                "is_superuser": user.is_superuser
+            },
+            "access": tokens['access'],
+            "refresh": tokens['refresh']
+        })
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_object(self):
+        return self.request.user
 
 # -------------------------
 # ViewSets for your models
@@ -205,9 +272,6 @@ class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
 # Public product endpoints per contract
 # -------------------------
 
-class DefaultPagination(generics.ListAPIView.pagination_class):
-    pass
-
 from rest_framework.pagination import PageNumberPagination
 
 class ContractPagination(PageNumberPagination):
@@ -241,7 +305,7 @@ class ProductDetailView(generics.RetrieveAPIView):
         return ctx
 
 # -------------------------
-# Auth & User endpoints
+# Legacy function-based views (keep for compatibility)
 # -------------------------
 
 @api_view(['GET'])
@@ -255,7 +319,6 @@ def me_view(request):
         'is_staff': user.is_staff,
         'is_superuser': user.is_superuser,
     })
-
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -283,7 +346,6 @@ def register_view(request):
         "access": str(access),
         "refresh": str(refresh)
     }, status=status.HTTP_201_CREATED)
-
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -319,13 +381,11 @@ def login_view(request):
         "refresh": str(refresh)
     })
 
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
     # With JWT, logout is mostly frontend: just remove tokens
     return Response({"message": "Logout successful"})
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
