@@ -31,7 +31,8 @@ INSTALLED_APPS = [
     # Allauth apps
     'allauth',
     'allauth.account',
-    'allauth.socialaccount',  # keep only if using social login
+    'allauth.socialaccount', 
+    'allauth.socialaccount.providers.google', # keep only if using social login
 
     # Your apps
     'Systems',
@@ -169,8 +170,8 @@ os.environ['CLOUDINARY_CLOUD_NAME'] = 'ddwpy1x3v'
 os.environ['CLOUDINARY_API_KEY'] = '796737964934249'
 os.environ['CLOUDINARY_API_SECRET'] = 'Kc2-_ihT9ZadSqdUllThmxrMZaM'
 
-# Allauth account settings (optional, but recommended)
+# Allauth account settings
 ACCOUNT_LOGIN_METHODS = {'username', 'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
-ACCOUNT_USERNAME_REQUIRED = True
+
