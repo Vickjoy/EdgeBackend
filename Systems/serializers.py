@@ -2,28 +2,31 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
+from django.conf import settings
 from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
 import os
-from decimal import Decimal
 
-# -- USER AUTHENTICATION SERIALIZERS --
+
+# -----------------------------
+# USER AUTHENTICATION SERIALIZERS
+# -----------------------------
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
-    
+
     class Meta:
         model = User
         fields = ('username', 'email', 'password', 'first_name', 'last_name')
-        
+
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return value
-        
+
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError("A user with this username already exists.")
         return value
-    
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User.objects.create_user(**validated_data)
@@ -31,46 +34,47 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         user.save()
         return user
 
+
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_superuser', 'date_joined')
         read_only_fields = ('id', 'is_staff', 'is_superuser', 'date_joined')
 
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = 'username'
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Allow login with either username or email
         self.fields['username'] = serializers.CharField()
         self.fields['password'] = serializers.CharField()
-    
+
     def validate(self, attrs):
         username = attrs.get('username')
         password = attrs.get('password')
-        
-        # Try to find user by username first, then by email
+
         user = None
         if '@' in username:
-            # Looks like an email
             try:
                 user_obj = User.objects.get(email=username)
                 username = user_obj.username
             except User.DoesNotExist:
                 pass
-        
-        # Use the original validation with username
+
         attrs['username'] = username
         return super().validate(attrs)
 
-# -- SUBCATEGORY MINI SERIALIZER --
+
+# -----------------------------
+# CATEGORY/SUBCATEGORY SERIALIZERS
+# -----------------------------
 class SubcategoryMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subcategory
         fields = ['id', 'name', 'slug']
 
-# -- CATEGORY SERIALIZERS --
+
 class CategorySerializer(serializers.ModelSerializer):
     subcategories = SubcategoryMiniSerializer(many=True, read_only=True)
 
@@ -78,12 +82,13 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name', 'type', 'slug', 'subcategories']
 
+
 class CategoryMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name', 'slug']
 
-# -- SUBCATEGORY SERIALIZERS --
+
 class SubcategorySerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -91,11 +96,15 @@ class SubcategorySerializer(serializers.ModelSerializer):
         model = Subcategory
         fields = ['id', 'name', 'slug', 'category']
 
-# -- SPECIFICATION SERIALIZERS --
+
+# -----------------------------
+# SPECIFICATION SERIALIZERS
+# -----------------------------
 class SpecificationRowSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecificationRow
         fields = ['key', 'value']
+
 
 class SpecificationTableSerializer(serializers.ModelSerializer):
     rows = SpecificationRowSerializer(many=True, read_only=True)
@@ -104,7 +113,10 @@ class SpecificationTableSerializer(serializers.ModelSerializer):
         model = SpecificationTable
         fields = ['title', 'rows']
 
-# -- PRODUCT SERIALIZER --
+
+# -----------------------------
+# PRODUCT SERIALIZER
+# -----------------------------
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     price = serializers.SerializerMethodField()
@@ -122,8 +134,6 @@ class ProductSerializer(serializers.ModelSerializer):
     documentation_url = serializers.SerializerMethodField()
     documentation_label = serializers.SerializerMethodField()
     features = serializers.CharField(required=False, allow_blank=True)
-    
-    # Override status field to ensure proper serialization
     status = serializers.SerializerMethodField()
 
     class Meta:
@@ -136,9 +146,10 @@ class ProductSerializer(serializers.ModelSerializer):
             'category', 'slug', 'subcategory_slug', 'category_slug'
         ]
 
-    # -- PRICE VISIBILITY LOGIC --
+    # -----------------------------
+    # PRICE VISIBILITY LOGIC
+    # -----------------------------
     def get_price(self, obj):
-        # Respect per-product price visibility
         request = self.context.get('request')
         user_is_auth = bool(request and getattr(request, 'user', None) and request.user.is_authenticated)
         if obj.price_visibility == Product.LOGIN_REQUIRED and not user_is_auth:
@@ -146,37 +157,42 @@ class ProductSerializer(serializers.ModelSerializer):
         return float(obj.price) if obj.price is not None else 0.00
 
     def get_price_requires_login(self, obj):
-        # Return True if price requires login and user is not authenticated
         request = self.context.get('request')
-        
-        # True only when this product requires login and user is not authenticated
         user_is_auth = bool(request and getattr(request, 'user', None) and request.user.is_authenticated)
         if obj.price_visibility == Product.LOGIN_REQUIRED and not user_is_auth:
             return True
-        
         return False
 
-    # -- IMAGE URL HANDLING FOR CLOUDINARY --
+    # -----------------------------
+    # IMAGE URL HANDLING (CLOUDINARY)
+    # -----------------------------
     def get_image(self, obj):
-        if obj.image:
-            # If using CloudinaryField, it should have a URL property
-            try:
-                if hasattr(obj.image, 'url'):
-                    return obj.image.url
-                elif hasattr(obj.image, 'build_url'):
-                    return obj.image.build_url()
-                else:
-                    # Fallback: construct Cloudinary URL manually
-                    image_str = str(obj.image)
-                    if image_str.startswith('http://') or image_str.startswith('https://'):
-                        return image_str
-                    # For old format images, ensure proper Cloudinary URL
-                    return f"https://res.cloudinary.com/ddwpy1x3v/{image_str}"
-            except Exception as e:
-                print(f"Error getting image URL for {obj.name}: {e}")
-                return None
-        return None
+        if not obj.image:
+            return None
 
+        CLOUD_NAME = getattr(settings, 'CLOUDINARY_STORAGE', {}).get('CLOUD_NAME', '')
+        FOLDER = getattr(settings, 'CLOUDINARY_STORAGE', {}).get('FOLDER', 'products')
+
+        try:
+            if hasattr(obj.image, 'url'):
+                return obj.image.url
+            if hasattr(obj.image, 'build_url'):
+                return obj.image.build_url()
+
+            image_str = str(obj.image)
+            if image_str.startswith('http://') or image_str.startswith('https://'):
+                return image_str
+
+            # Old images (public_id only)
+            return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{FOLDER}/{image_str}"
+
+        except Exception as e:
+            print(f"Error getting image URL for {obj.name}: {e}")
+            return None
+
+    # -----------------------------
+    # SLUG AND CATEGORY HELPERS
+    # -----------------------------
     def get_subcategory_slug(self, obj):
         return obj.subcategory.slug if obj.subcategory else None
 
@@ -184,29 +200,19 @@ class ProductSerializer(serializers.ModelSerializer):
         return obj.subcategory.category.slug if obj.subcategory and obj.subcategory.category else None
 
     def get_documentation_url(self, obj):
-        # Return the URL directly since it's now stored as a URL field
         return obj.documentation if obj.documentation else None
 
     def get_documentation_label(self, obj):
-        # Return the custom label or extract filename from URL
         if obj.documentation:
             if obj.documentation_label:
                 return obj.documentation_label
             else:
-                # Extract filename from URL keeping the original format
-                import re
                 from urllib.parse import urlparse
                 try:
-                    # Parse the URL to get the path
                     parsed_url = urlparse(obj.documentation)
                     filename = os.path.basename(parsed_url.path)
-                    # Remove file extension but keep original formatting
                     filename_without_ext = os.path.splitext(filename)[0]
-                    # Return the filename as-is (with hyphens, etc.)
-                    if filename_without_ext.strip():
-                        return filename_without_ext
-                    else:
-                        return "View Documentation"
+                    return filename_without_ext if filename_without_ext.strip() else "View Documentation"
                 except:
                     return "View Documentation"
         return None
@@ -217,5 +223,4 @@ class ProductSerializer(serializers.ModelSerializer):
         return None
 
     def get_status(self, obj):
-        """Return the normalized status for frontend"""
-        return obj.status  # This should now always be 'in_stock' or 'out_of_stock'
+        return obj.status
