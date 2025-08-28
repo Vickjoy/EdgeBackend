@@ -4,6 +4,15 @@ from import_export.admin import ImportExportModelAdmin
 from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
 from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
+from allauth.socialaccount.models import SocialApp
+
+admin.site.unregister(SocialApp)
+
+# Register your custom admin
+@admin.register(SocialApp)
+class CustomSocialAppAdmin(admin.ModelAdmin):
+    list_display = ('provider', 'name', 'client_id')
+    filter_horizontal = ('sites',)
 
 # Inlines for nested specifications
 class SpecificationRowInline(admin.TabularInline):
@@ -27,7 +36,7 @@ class ProductInline(admin.TabularInline):
 # Category Admin
 class CategoryAdmin(admin.ModelAdmin):
     inlines = [SubcategoryInline]
-    list_display = ('name', 'slug')
+    list_display = ('name', 'type', 'slug')
     readonly_fields = ('slug',)
 
     def get_readonly_fields(self, request, obj=None):
@@ -57,7 +66,7 @@ class ProductResource(resources.ModelResource):
         import_id_fields = ['slug']
         fields = (
             'name', 'price', 'price_visibility', 'description', 'documentation', 'documentation_label',
-            'status', 'image', 'slug', 'subcategory', 'category'
+            'status', 'stock', 'image', 'slug', 'subcategory', 'category'
         )
         skip_unchanged = True
         report_skipped = True
@@ -79,13 +88,17 @@ class ProductResource(resources.ModelResource):
 class ProductAdmin(ImportExportModelAdmin):
     resource_class = ProductResource
     inlines = [SpecificationTableInline]
-    list_display = ('name', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'image_preview', 'documentation_preview')
+    list_display = ('name', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock', 'image_preview', 'documentation_preview')
     list_filter = ('price_visibility', 'status', 'subcategory__category')
     readonly_fields = ('get_category', 'image_preview', 'slug')
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'slug', 'subcategory', 'status', 'stock')
+            'fields': ('name', 'slug', 'subcategory')
+        }),
+        ('Inventory', {
+            'fields': ('stock', 'status'),
+            'description': 'Stock quantity and availability status. Status is auto-updated based on stock.'
         }),
         ('Pricing', {
             'fields': ('price', 'price_visibility'),
@@ -107,13 +120,22 @@ class ProductAdmin(ImportExportModelAdmin):
     def image_preview(self, obj):
         if obj.image:
             try:
-                # Force the image URL to use Cloudinary if it's not already
-                image_url = str(obj.image.url) if hasattr(obj.image, 'url') else str(obj.image)
-                if not image_url.startswith('http'):
-                    image_url = f'https://res.cloudinary.com/ddwpy1x3v/{image_url}'
+                # Use the CloudinaryField's URL method
+                if hasattr(obj.image, 'url'):
+                    image_url = obj.image.url
+                elif hasattr(obj.image, 'build_url'):
+                    image_url = obj.image.build_url()
+                else:
+                    # Fallback for string representations
+                    image_str = str(obj.image)
+                    if image_str.startswith('http'):
+                        image_url = image_str
+                    else:
+                        image_url = f'https://res.cloudinary.com/ddwpy1x3v/{image_str}'
+                
                 return mark_safe(f'<img src="{image_url}" style="width: 50px; height: 50px; object-fit: cover;" />')
-            except:
-                return "Image Error"
+            except Exception as e:
+                return f"Image Error: {str(e)}"
         return "No Image"
     image_preview.short_description = 'Image Preview'
 
@@ -129,9 +151,24 @@ class ProductAdmin(ImportExportModelAdmin):
             return self.readonly_fields + ('slug',)
         return self.readonly_fields
 
+    def save_model(self, request, obj, form, change):
+        """Override save to ensure slug is generated and status is properly set"""
+        # The model's save method will handle slug generation and status updates
+        super().save_model(request, obj, form, change)
+
 # Register models
 admin.site.register(Category, CategoryAdmin)
 admin.site.register(Subcategory, SubcategoryAdmin)
 admin.site.register(Product, ProductAdmin)
-admin.site.register(SpecificationTable)
-admin.site.register(SpecificationRow)
+
+# Register SpecificationTable and SpecificationRow with basic admin
+@admin.register(SpecificationTable)
+class SpecificationTableAdmin(admin.ModelAdmin):
+    inlines = [SpecificationRowInline]
+    list_display = ('title', 'product')
+    list_filter = ('product__subcategory__category',)
+
+@admin.register(SpecificationRow)
+class SpecificationRowAdmin(admin.ModelAdmin):
+    list_display = ('table', 'key', 'value')
+    list_filter = ('table__product__subcategory__category',)

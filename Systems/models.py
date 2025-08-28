@@ -1,5 +1,8 @@
 from django.db import models
 from django.utils.text import slugify
+import cloudinary
+import cloudinary.uploader
+from cloudinary.models import CloudinaryField
 
 class Category(models.Model):
     FIRE_SAFETY = 'fire_safety'
@@ -55,6 +58,14 @@ class Product(models.Model):
         (LOGIN_REQUIRED, 'Login Required'),
     ]
 
+    # Stock status choices - simplified to only two values
+    IN_STOCK = 'in_stock'
+    OUT_OF_STOCK = 'out_of_stock'
+    STOCK_STATUS_CHOICES = [
+        (IN_STOCK, 'In Stock'),
+        (OUT_OF_STOCK, 'Out of Stock'),
+    ]
+
     subcategory = models.ForeignKey(Subcategory, related_name='products', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -66,14 +77,25 @@ class Product(models.Model):
     )
     description = models.TextField(blank=True)
     features = models.TextField(blank=True)
-    image = models.ImageField(upload_to='products/', null=True, blank=True)
+    
+    # Use CloudinaryField for proper Cloudinary integration
+    image = CloudinaryField('image', null=True, blank=True, folder='products')
+    
     slug = models.SlugField(unique=True, blank=True)
     documentation = models.URLField(blank=True, null=True, help_text="Enter the URL for the product datasheet")
     documentation_label = models.CharField(max_length=255, blank=True, help_text="Display text for the documentation link (e.g., 'View Datasheet', 'Technical Specs')")
-    status = models.CharField(max_length=50, default='active')
-    stock = models.PositiveIntegerField(default=0)
+    
+    # Updated status field with proper choices and default
+    status = models.CharField(
+        max_length=20, 
+        choices=STOCK_STATUS_CHOICES, 
+        default=IN_STOCK,
+        help_text="Stock availability status"
+    )
+    stock = models.PositiveIntegerField(default=0, help_text="Number of items in stock")
 
     def save(self, *args, **kwargs):
+        # Auto-generate slug from name if not provided
         if not self.slug:
             base_slug = slugify(self.name)
             slug = base_slug
@@ -82,10 +104,22 @@ class Product(models.Model):
                 slug = f"{base_slug}-{counter}"
                 counter += 1
             self.slug = slug
+        
+        # Auto-set stock status based on stock quantity
+        if self.stock > 0:
+            self.status = self.IN_STOCK
+        else:
+            self.status = self.OUT_OF_STOCK
+            
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_in_stock(self):
+        """Helper property to check if product is in stock"""
+        return self.status == self.IN_STOCK and self.stock > 0
 
 class SpecificationTable(models.Model):
     """

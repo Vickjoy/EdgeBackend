@@ -122,8 +122,9 @@ class ProductSerializer(serializers.ModelSerializer):
     documentation_url = serializers.SerializerMethodField()
     documentation_label = serializers.SerializerMethodField()
     features = serializers.CharField(required=False, allow_blank=True)
-
-    CLOUDINARY_BASE_URL = 'https://res.cloudinary.com/ddwpy1x3v/'
+    
+    # Override status field to ensure proper serialization
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -131,7 +132,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'id', 'name', 'price', 'price_visibility', 'price_requires_login',
             'description', 'features', 'image',
             'spec_tables', 'documentation', 'documentation_url', 'documentation_label',
-            'status', 'subcategory', 'subcategory_detail',
+            'status', 'stock', 'subcategory', 'subcategory_detail',
             'category', 'slug', 'subcategory_slug', 'category_slug'
         ]
 
@@ -155,15 +156,25 @@ class ProductSerializer(serializers.ModelSerializer):
         
         return False
 
-    # -- IMAGE URL FIX --
+    # -- IMAGE URL HANDLING FOR CLOUDINARY --
     def get_image(self, obj):
         if obj.image:
-            url = str(obj.image)
-            # If already full URL, return as-is
-            if url.startswith('http://') or url.startswith('https://'):
-                return url
-            # Otherwise prepend Cloudinary base URL
-            return self.CLOUDINARY_BASE_URL + url
+            # If using CloudinaryField, it should have a URL property
+            try:
+                if hasattr(obj.image, 'url'):
+                    return obj.image.url
+                elif hasattr(obj.image, 'build_url'):
+                    return obj.image.build_url()
+                else:
+                    # Fallback: construct Cloudinary URL manually
+                    image_str = str(obj.image)
+                    if image_str.startswith('http://') or image_str.startswith('https://'):
+                        return image_str
+                    # For old format images, ensure proper Cloudinary URL
+                    return f"https://res.cloudinary.com/ddwpy1x3v/{image_str}"
+            except Exception as e:
+                print(f"Error getting image URL for {obj.name}: {e}")
+                return None
         return None
 
     def get_subcategory_slug(self, obj):
@@ -205,12 +216,6 @@ class ProductSerializer(serializers.ModelSerializer):
             return CategoryMiniSerializer(obj.subcategory.category).data
         return None
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        # Normalize status for frontend: in_stock | out_of_stock
-        try:
-            stock = getattr(instance, 'stock', 0)
-            data['status'] = 'in_stock' if stock and stock > 0 else 'out_of_stock'
-        except Exception:
-            pass
-        return data
+    def get_status(self, obj):
+        """Return the normalized status for frontend"""
+        return obj.status  # This should now always be 'in_stock' or 'out_of_stock'

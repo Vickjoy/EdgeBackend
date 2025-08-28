@@ -219,7 +219,21 @@ class ProductViewSet(viewsets.ModelViewSet):
                 raise serializers.ValidationError({"detail": "Invalid subcategory ID."})
         else:
             raise serializers.ValidationError({"detail": "Subcategory not specified."})
+        
+        # Ensure default stock and status are set properly
+        validated_data = serializer.validated_data
+        if 'stock' not in validated_data:
+            validated_data['stock'] = 1  # Default to 1 item in stock
+        if 'status' not in validated_data:
+            validated_data['status'] = Product.IN_STOCK  # Default to in stock
+            
         serializer.save(subcategory=subcategory)
+
+    def perform_update(self, serializer):
+        """Override to ensure status is updated based on stock"""
+        instance = serializer.save()
+        # The model's save method will handle status updates based on stock
+        return instance
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -262,11 +276,17 @@ class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAdminUser]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         ctx['request'] = self.request
         return ctx
+
+    def perform_update(self, serializer):
+        """Ensure proper status handling on admin updates"""
+        instance = serializer.save()
+        return instance
 
 # -------------------------
 # Public product endpoints per contract

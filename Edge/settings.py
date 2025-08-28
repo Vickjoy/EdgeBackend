@@ -1,15 +1,16 @@
 from pathlib import Path
 from corsheaders.defaults import default_headers
 from datetime import timedelta
-import os
+from decouple import config, Csv
+import cloudinary
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
-SECRET_KEY = 'django-insecure-i9na=!@xp!=3ieclqhcuajz26$k0=+ir_g*gq^se&wa%m#tc71'
-DEBUG = True
-ALLOWED_HOSTS = []
+SECRET_KEY = config("SECRET_KEY")
+DEBUG = config("DEBUG", default=True, cast=bool)
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 
 # Application definition
 INSTALLED_APPS = [
@@ -20,6 +21,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
 
     # Third-party apps
     'rest_framework',
@@ -39,6 +41,8 @@ INSTALLED_APPS = [
     # Your apps
     'Systems',
 ]
+
+SITE_ID = 3
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # must be near the top
@@ -101,7 +105,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ===============================
-# JWT Configuration (Added from guide)
+# JWT Configuration
 # ===============================
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
@@ -150,20 +154,31 @@ AUTHENTICATION_BACKENDS = [
 
 # Login/Logout redirect URLs
 LOGIN_URL = '/login/'
-LOGIN_REDIRECT_URL = 'http://localhost:3000/'  # Your React app URL
-LOGOUT_REDIRECT_URL = 'http://localhost:3000/'
+LOGIN_REDIRECT_URL = "http://localhost:5173/"
+LOGOUT_REDIRECT_URL = "http://localhost:5173/"
 
 # ===============================
 # Cloudinary configuration
 # ===============================
 CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': 'ddwpy1x3v',
-    'API_KEY': '796737964934249',
-    'API_SECRET': 'Kc2-_ihT9ZadSqdUllThmxrMZaM',
+    'CLOUD_NAME': config("CLOUDINARY_CLOUD_NAME"),
+    'API_KEY': config("CLOUDINARY_API_KEY"),
+    'API_SECRET': config("CLOUDINARY_API_SECRET"),
+    'SECURE': True,
+    'FOLDER': 'products',
 }
+
+cloudinary.config(
+    cloud_name=config("CLOUDINARY_CLOUD_NAME"),
+    api_key=config("CLOUDINARY_API_KEY"),
+    api_secret=config("CLOUDINARY_API_SECRET"),
+    secure=True
+)
+
+# Use Cloudinary for media storage
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
-# REST Framework configuration (Updated with JWT)
+# REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -176,25 +191,41 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 12,
 }
 
-# Env for Cloudinary SDK
-os.environ['CLOUDINARY_CLOUD_NAME'] = 'ddwpy1x3v'
-os.environ['CLOUDINARY_API_KEY'] = '796737964934249'
-os.environ['CLOUDINARY_API_SECRET'] = 'Kc2-_ihT9ZadSqdUllThmxrMZaM'
-
 # Allauth account settings
 ACCOUNT_LOGIN_METHODS = {'username', 'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 
-# Google OAuth settings (from guide)
+# Google OAuth settings
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
-        'SCOPE': [
-            'profile',
-            'email',
-        ],
-        'AUTH_PARAMS': {
-            'access_type': 'online',
+        'SCOPE': ['profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
+        'APP': {
+            'client_id': config("GOOGLE_CLIENT_ID"),
+            'secret': config("GOOGLE_CLIENT_SECRET"),
+            'key': ''
         }
     }
+}
+
+# Logging
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "loggers": {
+        "allauth": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": True,
+        },
+        "requests_oauthlib": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": True,
+        },
+    },
 }
