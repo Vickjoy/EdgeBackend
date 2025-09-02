@@ -14,7 +14,7 @@ from .serializers import (
     CategorySerializer, SubcategorySerializer, ProductSerializer,
     UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer
 )
-
+from rest_framework.pagination import PageNumberPagination
 # -------------------------
 # Authentication Views
 # -------------------------
@@ -149,20 +149,19 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
         except Http404:
             raise serializers.ValidationError({"detail": "Subcategory not found."})
 
+class DefaultPagination(PageNumberPagination):
+    page_size = 40
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
     lookup_field = 'slug'
-
-    # Pagination for list endpoints with page & page_size
-    from rest_framework.pagination import PageNumberPagination
-    class DefaultPagination(PageNumberPagination):
-        page_size = 12
-        page_size_query_param = 'page_size'
-        max_page_size = 100
     pagination_class = DefaultPagination
+    
 
     def get_permissions(self):
         # Admin-only for unsafe methods; allow read for anyone
