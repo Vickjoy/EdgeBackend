@@ -7,13 +7,15 @@ from cloudinary.models import CloudinaryField
 class Category(models.Model):
     FIRE_SAFETY = 'fire_safety'
     ICT = 'ict'
+    SOLAR = 'solar'
     CATEGORY_TYPES = [
         (FIRE_SAFETY, 'Fire Safety'),
         (ICT, 'ICT'),
+        (SOLAR, 'Solar')
     ]
 
     name = models.CharField(max_length=255)
-    type = models.CharField(max_length=50, choices=[('fire_safety', 'Fire Safety'), ('ict', 'ICT')], default='fire_safety')
+    type = models.CharField(max_length=50, choices=[('fire_safety', 'Fire Safety'), ('ict', 'ICT'), ('solar', 'Solar')], default='fire_safety')
     slug = models.SlugField(unique=True, blank=True)
 
     def save(self, *args, **kwargs):
