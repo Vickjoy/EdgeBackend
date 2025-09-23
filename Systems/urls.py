@@ -4,7 +4,8 @@ from .views import (
     RegisterView, CustomTokenObtainPairView, UserProfileView,
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
-    ProductDetailView, ProductsBySubcategoryView
+    ProductDetailView, ProductsBySubcategoryView,
+    CustomGoogleOAuth2CallbackView  # <-- now treated as FBV
 )
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -24,19 +25,27 @@ subcategories_router.register(r'products', ProductViewSet, basename='subcategory
 
 urlpatterns = [
     # -------------------------
-    # Authentication endpoints (as per the guide)
+    # Authentication endpoints (JWT + Legacy)
     # -------------------------
     path('register/', RegisterView.as_view(), name='register'),
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('me/', UserProfileView.as_view(), name='user_profile'),
-    
-    # Legacy auth endpoints (for compatibility)
+
     path('auth/register/', register_view, name='legacy_register'),
     path('auth/login/', login_view, name='legacy_login'),
     path('auth/logout/', logout_view, name='legacy_logout'),
     path('auth/user/', current_user_view, name='current_user'),
-    
+
+    # -------------------------
+    # Google OAuth override (FBV, no .as_view())
+    # -------------------------
+    path(
+        'accounts/google/login/callback/',
+        CustomGoogleOAuth2CallbackView,
+        name='google_oauth2_callback'
+    ),
+
     # -------------------------
     # Routers
     # -------------------------
@@ -47,34 +56,46 @@ urlpatterns = [
     # -------------------------
     # Slug-based endpoints for public browsing
     # -------------------------
-    path('categories/<slug:category_slug>/subcategories/',
-         SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}),
-         name='subcategory-by-category-slug'),
+    path(
+        'categories/<slug:category_slug>/subcategories/',
+        SubcategoryViewSet.as_view({'get': 'list', 'post': 'create'}),
+        name='subcategory-by-category-slug'
+    ),
 
-    path('categories/<slug:category_slug>/subcategories/<slug:slug>/',
-         SubcategoryViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
-         name='subcategory-detail-by-slug'),
+    path(
+        'categories/<slug:category_slug>/subcategories/<slug:slug>/',
+        SubcategoryViewSet.as_view({
+            'get': 'retrieve',
+            'put': 'update',
+            'patch': 'partial_update',
+            'delete': 'destroy'
+        }),
+        name='subcategory-detail-by-slug'
+    ),
 
     # -------------------------
     # Product endpoints (contract-specific)
     # -------------------------
-    # Public product listing by subcategory
-    path('subcategories/<slug:subcategory_slug>/products/',
-         ProductsBySubcategoryView.as_view(),
-         name='products-by-subcategory'),
-    
-    # Public product detail by slug
-    path('products/<slug:product_slug>/', 
-         ProductDetailView.as_view(), 
-         name='product-detail-contract'),
+    path(
+        'subcategories/<slug:subcategory_slug>/products/',
+        ProductsBySubcategoryView.as_view(),
+        name='products-by-subcategory'
+    ),
 
-    # Admin product creation by subcategory
-    path('subcategories/<slug:subcategory_slug>/products/create/',
-         ProductViewSet.as_view({'post': 'create'}),
-         name='product-create-by-subcategory'),
+    path(
+        'products/<slug:product_slug>/',
+        ProductDetailView.as_view(),
+        name='product-detail-contract'
+    ),
+
+    path(
+        'subcategories/<slug:subcategory_slug>/products/create/',
+        ProductViewSet.as_view({'post': 'create'}),
+        name='product-create-by-subcategory'
+    ),
 
     # -------------------------
-    # Admin-only endpoints (pk based updates/deletes)
+    # Admin-only endpoints
     # -------------------------
     path('categories/<int:pk>/', CategoryAdminDetailView.as_view(), name='category-admin-detail'),
     path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryAdminDetailView.as_view(), name='subcategory-admin-detail'),

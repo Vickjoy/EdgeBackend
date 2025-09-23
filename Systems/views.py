@@ -1,7 +1,8 @@
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
+from django.contrib.auth.decorators import login_required
 from rest_framework import viewsets, status, serializers, generics, permissions
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from rest_framework.decorators import api_view, permission_classes, action
@@ -9,12 +10,19 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
+import logging
+
 from .models import Category, Subcategory, Product
 from .serializers import (
     CategorySerializer, SubcategorySerializer, ProductSerializer,
     UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer
 )
 from rest_framework.pagination import PageNumberPagination
+
+logger = logging.getLogger(__name__)
+
 # -------------------------
 # Authentication Views
 # -------------------------
@@ -28,10 +36,8 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            # Generate tokens for auto-login after registration
             refresh = RefreshToken.for_user(user)
             access = refresh.access_token
-            
             return Response({
                 'message': 'User created successfully',
                 'user': {
@@ -53,13 +59,10 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         try:
             serializer.is_valid(raise_exception=True)
         except Exception:
-            return Response({
-                "error": "Invalid credentials"
-            }, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         
         tokens = serializer.validated_data
         user = serializer.user
-        
         return Response({
             "user": {
                 "id": user.id,
@@ -80,6 +83,28 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 # -------------------------
+# Social Login Callback
+# -------------------------
+
+class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
+    """
+    Custom Google OAuth callback that ensures proper redirect
+    """
+    adapter_class = GoogleOAuth2Adapter
+    
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        
+        if request.user.is_authenticated:
+            next_url = request.session.get('socialaccount_next_url', '/')
+            frontend_url = f"http://localhost:5173{next_url}"
+            logger.debug(f"OAuth success, redirecting to: {frontend_url}")
+            return HttpResponseRedirect(frontend_url)
+        
+        logger.debug("OAuth failed, redirecting to login")
+        return HttpResponseRedirect("http://localhost:5173/user-login")
+
+# -------------------------
 # ViewSets for your models
 # -------------------------
 
@@ -88,10 +113,9 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
-    pagination_class = None  # frontend expects a plain array
+    pagination_class = None  
 
     def get_permissions(self):
-        # Allow unauthenticated GET/HEAD/OPTIONS; restrict writes to admin
         if self.action in ['list', 'retrieve']:
             return [AllowAny()]
         return [IsAdminUser()]
@@ -111,7 +135,7 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
     serializer_class = SubcategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
-    pagination_class = None  # frontend expects a plain array
+    pagination_class = None  
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -162,12 +186,9 @@ class ProductViewSet(viewsets.ModelViewSet):
     lookup_field = 'slug'
     pagination_class = DefaultPagination
     
-
     def get_permissions(self):
-        # Admin-only for unsafe methods; allow read for anyone
         if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
             return [IsAdminUser()]
-        # Admin-only listing when using admin query param (?subcategory=...)
         if self.action == 'list' and self.request.query_params.get('subcategory') is not None:
             return [IsAdminUser()]
         return [AllowAny()]
@@ -219,19 +240,15 @@ class ProductViewSet(viewsets.ModelViewSet):
         else:
             raise serializers.ValidationError({"detail": "Subcategory not specified."})
         
-        # Ensure default stock and status are set properly
         validated_data = serializer.validated_data
         if 'stock' not in validated_data:
-            validated_data['stock'] = 1  # Default to 1 item in stock
+            validated_data['stock'] = 1
         if 'status' not in validated_data:
-            validated_data['status'] = Product.IN_STOCK  # Default to in stock
-            
+            validated_data['status'] = Product.IN_STOCK
         serializer.save(subcategory=subcategory)
 
     def perform_update(self, serializer):
-        """Override to ensure status is updated based on stock"""
         instance = serializer.save()
-        # The model's save method will handle status updates based on stock
         return instance
 
     def get_serializer_context(self):
@@ -252,7 +269,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 # -------------------------
-# Admin-only PK-based views to match frontend contract
+# Admin-only PK-based views
 # -------------------------
 
 class CategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -283,15 +300,12 @@ class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
         return ctx
 
     def perform_update(self, serializer):
-        """Ensure proper status handling on admin updates"""
         instance = serializer.save()
         return instance
 
 # -------------------------
-# Public product endpoints per contract
+# Public product endpoints
 # -------------------------
-
-from rest_framework.pagination import PageNumberPagination
 
 class ContractPagination(PageNumberPagination):
     page_size = 12
@@ -324,7 +338,7 @@ class ProductDetailView(generics.RetrieveAPIView):
         return ctx
 
 # -------------------------
-# Legacy function-based views (keep for compatibility)
+# Legacy function-based views
 # -------------------------
 
 @api_view(['GET'])
@@ -356,8 +370,6 @@ def register_view(request):
         return Response({"error": "Email already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
     user = User.objects.create_user(username=username, email=email or '', password=password)
-
-    # Return JWT tokens to auto-login (per frontend contract)
     refresh = RefreshToken.for_user(user)
     access = refresh.access_token
 
@@ -369,11 +381,6 @@ def register_view(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_view(request):
-    """
-    JWT login endpoint
-    Expects: {"username": "...", "password": "..."}
-    Returns: {"access": "...", "refresh": "...", "user": {...}}
-    """
     username = request.data.get('username')
     password = request.data.get('password')
 
@@ -384,7 +391,6 @@ def login_view(request):
     if user is None:
         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-    # Generate JWT tokens
     refresh = RefreshToken.for_user(user)
     access = refresh.access_token
 
@@ -403,7 +409,6 @@ def login_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    # With JWT, logout is mostly frontend: just remove tokens
     return Response({"message": "Logout successful"})
 
 @api_view(['GET'])
@@ -419,3 +424,11 @@ def current_user_view(request):
         'date_joined': user.date_joined,
         'last_login': user.last_login,
     })
+
+# -------------------------
+# Social login success handler
+# -------------------------
+
+@login_required
+def social_login_success(request):
+    return redirect('http://localhost:5173/')

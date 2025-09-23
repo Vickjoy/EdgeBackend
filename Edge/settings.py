@@ -35,7 +35,7 @@ INSTALLED_APPS = [
     # Allauth apps
     'allauth',
     'allauth.account',
-    'allauth.socialaccount', 
+    'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
 
     # Your apps
@@ -123,7 +123,9 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
+# ===============================
 # CORS Configuration
+# ===============================
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
@@ -146,13 +148,17 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 
-# Authentication backends
+# ===============================
+# Authentication Backends
+# ===============================
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # default
     'allauth.account.auth_backends.AuthenticationBackend',  # required by Allauth
 ]
 
+# ===============================
 # Login/Logout redirect URLs
+# ===============================
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = "http://localhost:5173/"
 LOGOUT_REDIRECT_URL = "http://localhost:5173/"
@@ -178,7 +184,9 @@ cloudinary.config(
 # Use Cloudinary for media storage
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
+# ===============================
 # REST Framework configuration
+# ===============================
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -191,41 +199,54 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 40,
 }
 
-# Allauth account settings
+# ===============================
+# Allauth settings
+# ===============================
 ACCOUNT_LOGIN_METHODS = {'username', 'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 
-# Google OAuth settings
+SOCIALACCOUNT_ADAPTER = 'Systems.adapters.CustomSocialAccountAdapter'
+ACCOUNT_ADAPTER = 'Systems.adapters.CustomAccountAdapter'
+
+SOCIALACCOUNT_LOGIN_ON_GET = True
+SOCIALACCOUNT_AUTO_SIGNUP = True  # Automatically create user accounts
+
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': ['profile', 'email'],
         'AUTH_PARAMS': {'access_type': 'online'},
-        'APP': {
-            'client_id': config("GOOGLE_CLIENT_ID"),
-            'secret': config("GOOGLE_CLIENT_SECRET"),
-            'key': ''
-        }
+        'OAUTH_PKCE_ENABLED': True,
+        # Remove the APP section - use admin configuration instead
     }
 }
 
-# Logging
+# ===============================
+# Enhanced Logging
+# ===============================
 LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {
-        "console": {"class": "logging.StreamHandler"},
-    },
-    "loggers": {
-        "allauth": {
-            "handlers": ["console"],
-            "level": "DEBUG",
-            "propagate": True,
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
         },
-        "requests_oauthlib": {
-            "handlers": ["console"],
-            "level": "DEBUG",
-            "propagate": True,
+    },
+    'loggers': {
+        'allauth': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'Systems.adapters': {  # Add logging for your custom adapter
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
         },
     },
 }
