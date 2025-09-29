@@ -54,6 +54,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',  # added for Allauth
+    # Add cache middleware for better performance
+    'django.middleware.cache.UpdateCacheMiddleware',
+    'django.middleware.cache.FetchFromCacheMiddleware',
 ]
 
 ROOT_URLCONF = 'Edge.urls'
@@ -82,6 +85,34 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+# ===============================
+# Caching Configuration
+# ===============================
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'edgesystems-cache',
+        'TIMEOUT': 900,  # 15 minutes default timeout
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,
+            'CULL_FREQUENCY': 3,
+        }
+    },
+    # Optional: Add Redis cache for production
+    # 'redis': {
+    #     'BACKEND': 'django_redis.cache.RedisCache',
+    #     'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/1'),
+    #     'OPTIONS': {
+    #         'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+    #     }
+    # }
+}
+
+# Cache key prefixes to avoid collisions
+CACHE_MIDDLEWARE_ALIAS = 'default'
+CACHE_MIDDLEWARE_SECONDS = 900  # 15 minutes
+CACHE_MIDDLEWARE_KEY_PREFIX = 'edgesystems'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -116,12 +147,13 @@ SIMPLE_JWT = {
 # ===============================
 # Session Configuration
 # ===============================
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'  # Use cache for sessions
 SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_CACHE_ALIAS = 'default'  # Use default cache for sessions
 
 # ===============================
 # CORS Configuration
@@ -197,6 +229,14 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 40,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '200/hour'
+    }
 }
 
 # ===============================
@@ -221,32 +261,44 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
-# ===============================
-# Enhanced Logging
-# ===============================
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': False,
+    'disable_existing_loggers': True,
     'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
+        'null': {
+            'class': 'logging.NullHandler',
         },
     },
-    'loggers': {
-        'allauth': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': True,
-        },
-        'Systems.adapters': {  # Add logging for your custom adapter
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': True,
-        },
-        'django.request': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': True,
-        },
+    'root': {
+        'handlers': ['null'],
+        'level': 'CRITICAL',
     },
 }
+
+# Create logs directory if it doesn't exist
+import os
+logs_dir = BASE_DIR / 'logs'
+os.makedirs(logs_dir, exist_ok=True)
+
+# ===============================
+# Performance Optimizations
+# ===============================
+
+# Database connection pooling (for production)
+if not DEBUG:
+    DATABASES['default']['CONN_MAX_AGE'] = 60
+
+# Static files optimization
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
+
+# Security headers for production
+if not DEBUG:
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

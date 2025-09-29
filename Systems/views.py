@@ -3,6 +3,9 @@ from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+from django.views.decorators.vary import vary_on_headers
 from rest_framework import viewsets, status, serializers, generics, permissions
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from rest_framework.decorators import api_view, permission_classes, action
@@ -105,9 +108,11 @@ class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
         return HttpResponseRedirect("http://localhost:5173/user-login")
 
 # -------------------------
-# ViewSets for your models
+# Cached ViewSets for your models
 # -------------------------
 
+@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -130,6 +135,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
         except Http404:
             raise serializers.ValidationError({"detail": "Category not found."})
 
+@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class SubcategoryViewSet(viewsets.ModelViewSet):
     queryset = Subcategory.objects.all()
     serializer_class = SubcategorySerializer
@@ -178,6 +185,8 @@ class DefaultPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
+@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -269,7 +278,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 # -------------------------
-# Admin-only PK-based views
+# Admin-only PK-based views (no caching for write operations)
 # -------------------------
 
 class CategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -293,44 +302,6 @@ class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ProductSerializer
     permission_classes = [IsAdminUser]
     parser_classes = [MultiPartParser, FormParser]
-
-    def get_serializer_context(self):
-        ctx = super().get_serializer_context()
-        ctx['request'] = self.request
-        return ctx
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        return instance
-
-# -------------------------
-# Public product endpoints
-# -------------------------
-
-class ContractPagination(PageNumberPagination):
-    page_size = 12
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-class ProductsBySubcategoryView(generics.ListAPIView):
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.AllowAny]
-    pagination_class = ContractPagination
-
-    def get_queryset(self):
-        return Product.objects.filter(subcategory__slug=self.kwargs.get('subcategory_slug')).order_by('-id')
-
-    def get_serializer_context(self):
-        ctx = super().get_serializer_context()
-        ctx['request'] = self.request
-        return ctx
-
-class ProductDetailView(generics.RetrieveAPIView):
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.AllowAny]
-    lookup_field = 'slug'
-    lookup_url_kwarg = 'product_slug'
-    queryset = Product.objects.all()
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
@@ -432,3 +403,43 @@ def current_user_view(request):
 @login_required
 def social_login_success(request):
     return redirect('http://localhost:5173/')
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        return instance
+
+# -------------------------
+# Public product endpoints with caching
+# -------------------------
+
+class ContractPagination(PageNumberPagination):
+    page_size = 12
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+class ProductsBySubcategoryView(generics.ListAPIView):
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = ContractPagination
+
+    def get_queryset(self):
+        return Product.objects.filter(subcategory__slug=self.kwargs.get('subcategory_slug')).order_by('-id')
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['request'] = self.request
+        return ctx
+
+@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+class ProductDetailView(generics.RetrieveAPIView):
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'slug'
+    lookup_url_kwarg = 'product_slug'
+    queryset = Product.objects.all()
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['request'] = self.request
+        return ctx
