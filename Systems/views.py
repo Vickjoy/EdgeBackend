@@ -16,6 +16,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 import logging
+from django.core.cache import cache
 
 from .models import Category, Subcategory, Product
 from .serializers import (
@@ -90,14 +91,10 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 # -------------------------
 
 class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
-    """
-    Custom Google OAuth callback that ensures proper redirect
-    """
     adapter_class = GoogleOAuth2Adapter
     
     def dispatch(self, request, *args, **kwargs):
         response = super().dispatch(request, *args, **kwargs)
-        
         if request.user.is_authenticated:
             next_url = request.session.get('socialaccount_next_url', '/')
             frontend_url = f"http://localhost:5173{next_url}"
@@ -108,11 +105,9 @@ class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
         return HttpResponseRedirect("http://localhost:5173/user-login")
 
 # -------------------------
-# Cached ViewSets for your models
+# Category / Subcategory / Product ViewSets with corrected caching
 # -------------------------
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
-@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -125,6 +120,28 @@ class CategoryViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [IsAdminUser()]
 
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        cache.clear()
+        return obj
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        cache.clear()
+        return obj
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        cache.clear()
+
+    @method_decorator(cache_page(60 * 15))
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(60 * 15))
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
@@ -135,8 +152,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         except Http404:
             raise serializers.ValidationError({"detail": "Category not found."})
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
-@method_decorator(vary_on_headers('Authorization'), name='dispatch')
+
 class SubcategoryViewSet(viewsets.ModelViewSet):
     queryset = Subcategory.objects.all()
     serializer_class = SubcategorySerializer
@@ -149,6 +165,39 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [IsAdminUser()]
 
+    def perform_create(self, serializer):
+        category_slug = self.kwargs.get('category_slug')
+        category_id = self.kwargs.get('category_pk')
+        if category_slug:
+            category = get_object_or_404(Category, slug=category_slug)
+        elif category_id:
+            if str(category_id).isdigit():
+                category = get_object_or_404(Category, id=category_id)
+            else:
+                category = get_object_or_404(Category, slug=category_id)
+        else:
+            raise serializers.ValidationError({"detail": "Category not specified."})
+        obj = serializer.save(category=category)
+        cache.clear()
+        return obj
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        cache.clear()
+        return obj
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        cache.clear()
+
+    @method_decorator(cache_page(60 * 15))
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(60 * 15))
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
     def get_queryset(self):
         queryset = super().get_queryset()
         category_slug = self.kwargs.get('category_slug')
@@ -157,36 +206,19 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
             return queryset.filter(category=category)
         return queryset
 
-    def perform_create(self, serializer):
-        category_slug = self.kwargs.get('category_slug')
-        category_id = self.kwargs.get('category_pk')
-        if category_slug:
-            category = get_object_or_404(Category, slug=category_slug)
-        elif category_id:
-            try:
-                if str(category_id).isdigit():
-                    category = get_object_or_404(Category, id=category_id)
-                else:
-                    category = get_object_or_404(Category, slug=category_id)
-            except ValueError:
-                raise serializers.ValidationError({"detail": "Invalid category ID."})
-        else:
-            raise serializers.ValidationError({"detail": "Category not specified."})
-        serializer.save(category=category)
-
     def get_object(self):
         try:
             return super().get_object()
         except Http404:
             raise serializers.ValidationError({"detail": "Subcategory not found."})
 
+
 class DefaultPagination(PageNumberPagination):
     page_size = 40
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
-@method_decorator(vary_on_headers('Authorization'), name='dispatch')
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -202,6 +234,35 @@ class ProductViewSet(viewsets.ModelViewSet):
             return [IsAdminUser()]
         return [AllowAny()]
 
+    def perform_create(self, serializer):
+        subcategory_slug = self.kwargs.get('subcategory_slug')
+        subcategory_pk = self.kwargs.get('subcategory_pk')
+        if subcategory_slug:
+            subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
+        elif subcategory_pk:
+            if str(subcategory_pk).isdigit():
+                subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
+            else:
+                subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
+        else:
+            raise serializers.ValidationError({"detail": "Subcategory not specified."})
+        validated_data = serializer.validated_data
+        if 'stock' not in validated_data:
+            validated_data['stock'] = 1
+        if 'status' not in validated_data:
+            validated_data['status'] = Product.IN_STOCK
+        serializer.save(subcategory=subcategory)
+        cache.clear()
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        cache.clear()
+        return obj
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        cache.clear()
+
     def get_queryset(self):
         queryset = super().get_queryset()
         subcategory_slug = self.kwargs.get('subcategory_slug')
@@ -211,13 +272,10 @@ class ProductViewSet(viewsets.ModelViewSet):
             subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
             return queryset.filter(subcategory=subcategory)
         if subcategory_pk:
-            try:
-                if str(subcategory_pk).isdigit():
-                    subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
-                else:
-                    subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
-            except ValueError:
-                raise serializers.ValidationError({"detail": "Invalid subcategory ID."})
+            if str(subcategory_pk).isdigit():
+                subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
+            else:
+                subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
             return queryset.filter(subcategory=subcategory)
         if qp_subcat:
             if str(qp_subcat).isdigit():
@@ -232,33 +290,6 @@ class ProductViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         except Http404:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
-
-    def perform_create(self, serializer):
-        subcategory_slug = self.kwargs.get('subcategory_slug')
-        subcategory_pk = self.kwargs.get('subcategory_pk')
-        if subcategory_slug:
-            subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
-        elif subcategory_pk:
-            try:
-                if str(subcategory_pk).isdigit():
-                    subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
-                else:
-                    subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
-            except ValueError:
-                raise serializers.ValidationError({"detail": "Invalid subcategory ID."})
-        else:
-            raise serializers.ValidationError({"detail": "Subcategory not specified."})
-        
-        validated_data = serializer.validated_data
-        if 'stock' not in validated_data:
-            validated_data['stock'] = 1
-        if 'status' not in validated_data:
-            validated_data['status'] = Product.IN_STOCK
-        serializer.save(subcategory=subcategory)
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        return instance
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -278,7 +309,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 # -------------------------
-# Admin-only PK-based views (no caching for write operations)
+# Admin-only PK-based views
 # -------------------------
 
 class CategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -404,10 +435,6 @@ def current_user_view(request):
 def social_login_success(request):
     return redirect('http://localhost:5173/')
 
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        return instance
-
 # -------------------------
 # Public product endpoints with caching
 # -------------------------
@@ -417,7 +444,7 @@ class ContractPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+@method_decorator(cache_page(60 * 15), name='dispatch')
 class ProductsBySubcategoryView(generics.ListAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
@@ -431,7 +458,7 @@ class ProductsBySubcategoryView(generics.ListAPIView):
         ctx['request'] = self.request
         return ctx
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # 15-minute cache
+@method_decorator(cache_page(60 * 15), name='dispatch')
 class ProductDetailView(generics.RetrieveAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
