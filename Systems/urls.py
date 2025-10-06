@@ -4,8 +4,8 @@ from .views import (
     RegisterView, CustomTokenObtainPairView, UserProfileView,
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
-    ProductDetailView, ProductsBySubcategoryView,
-    CustomGoogleOAuth2CallbackView  # <-- now treated as FBV
+    ProductDetailView, ProductsBySubcategoryView, ProductRelatedView,
+    CustomGoogleOAuth2CallbackView
 )
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -86,6 +86,13 @@ urlpatterns = [
         'products/<slug:product_slug>/',
         ProductDetailView.as_view(),
         name='product-detail-contract'
+    ),
+
+    # ✅ NEW Related Products Endpoint
+    path(
+        'products/<slug:product_slug>/related/',
+        ProductRelatedView.as_view(),
+        name='product-related'
     ),
 
     path(

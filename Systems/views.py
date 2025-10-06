@@ -109,7 +109,7 @@ class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
 # -------------------------
 
 class CategoryViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.all()
+    queryset = Category.objects.all().order_by('id')  # ✅ Added explicit ordering
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
@@ -154,7 +154,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
 
 class SubcategoryViewSet(viewsets.ModelViewSet):
-    queryset = Subcategory.objects.all()
+    queryset = Subcategory.objects.all().order_by('id')  # ✅ Added explicit ordering
     serializer_class = SubcategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
@@ -203,7 +203,7 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
         category_slug = self.kwargs.get('category_slug')
         if category_slug:
             category = get_object_or_404(Category, slug=category_slug)
-            return queryset.filter(category=category)
+            return queryset.filter(category=category).order_by('id')  # ✅ Maintain ordering after filter
         return queryset
 
     def get_object(self):
@@ -220,7 +220,7 @@ class DefaultPagination(PageNumberPagination):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.all()
+    queryset = Product.objects.all().order_by('-id')  # ✅ Added explicit ordering
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
@@ -270,17 +270,17 @@ class ProductViewSet(viewsets.ModelViewSet):
         qp_subcat = self.request.query_params.get('subcategory')
         if subcategory_slug:
             subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
-            return queryset.filter(subcategory=subcategory)
+            return queryset.filter(subcategory=subcategory).order_by('-id')  # ✅ Maintain ordering
         if subcategory_pk:
             if str(subcategory_pk).isdigit():
                 subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
             else:
                 subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
-            return queryset.filter(subcategory=subcategory)
+            return queryset.filter(subcategory=subcategory).order_by('-id')  # ✅ Maintain ordering
         if qp_subcat:
             if str(qp_subcat).isdigit():
-                return queryset.filter(subcategory__id=qp_subcat)
-            return queryset.filter(subcategory__slug=qp_subcat)
+                return queryset.filter(subcategory__id=qp_subcat).order_by('-id')  # ✅ Maintain ordering
+            return queryset.filter(subcategory__slug=qp_subcat).order_by('-id')  # ✅ Maintain ordering
         return queryset
 
     def retrieve(self, request, *args, **kwargs):
@@ -298,15 +298,34 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def all_categories(self, request):
-        categories = Category.objects.all()
+        categories = Category.objects.all().order_by('id')  # ✅ Added ordering
         serializer = CategorySerializer(categories, many=True, context={'request': request})
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def all_subcategories(self, request):
-        subcategories = Subcategory.objects.all()
+        subcategories = Subcategory.objects.all().order_by('id')  # ✅ Added ordering
         serializer = SubcategorySerializer(subcategories, many=True, context={'request': request})
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='related', permission_classes=[AllowAny])
+    def related(self, request, slug=None):
+        """
+        Returns products from the same subcategory, excluding the current product.
+        Limited to 8 products, ordered by most recent.
+        """
+        try:
+            product = self.get_object()
+            related_products = Product.objects.filter(
+                subcategory=product.subcategory
+            ).exclude(
+                id=product.id
+            ).order_by('-id')[:8]
+            
+            serializer = self.get_serializer(related_products, many=True)
+            return Response(serializer.data)
+        except Http404:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
 # -------------------------
 # Admin-only PK-based views
@@ -326,7 +345,7 @@ class SubcategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         category_slug = self.kwargs.get('category_slug')
         category = get_object_or_404(Category, slug=category_slug)
-        return Subcategory.objects.filter(category=category)
+        return Subcategory.objects.filter(category=category).order_by('id')  # ✅ Added ordering
 
 class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.all()
@@ -465,6 +484,30 @@ class ProductDetailView(generics.RetrieveAPIView):
     lookup_field = 'slug'
     lookup_url_kwarg = 'product_slug'
     queryset = Product.objects.all()
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['request'] = self.request
+        return ctx
+
+@method_decorator(cache_page(60 * 15), name='dispatch')
+class ProductRelatedView(generics.ListAPIView):
+    """
+    Returns related products from the same subcategory.
+    """
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        product_slug = self.kwargs.get('product_slug')
+        product = get_object_or_404(Product, slug=product_slug)
+        
+        return Product.objects.filter(
+            subcategory=product.subcategory
+        ).exclude(
+            id=product.id
+        ).order_by('-id')[:8]
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
