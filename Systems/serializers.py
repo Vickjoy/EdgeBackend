@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
 from django.conf import settings
-from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
+from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog
 import os
 
 
@@ -224,3 +224,33 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj):
         return obj.status
+
+class BlogSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Blog
+        fields = ['id', 'title', 'slug', 'image', 'content', 'excerpt', 
+                  'source_name', 'source_url', 'created_at', 'updated_at', 'is_published']
+        read_only_fields = ['slug', 'created_at', 'updated_at']
+
+    def get_image(self, obj):
+        if not obj.image:
+            return None
+        
+        CLOUD_NAME = getattr(settings, 'CLOUDINARY_STORAGE', {}).get('CLOUD_NAME', '')
+        
+        try:
+            if hasattr(obj.image, 'url'):
+                return obj.image.url
+            if hasattr(obj.image, 'build_url'):
+                return obj.image.build_url()
+            
+            image_str = str(obj.image)
+            if image_str.startswith('http://') or image_str.startswith('https://'):
+                return image_str
+            
+            return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/blogs/{image_str}"
+        except Exception as e:
+            print(f"Error getting blog image URL: {e}")
+            return None

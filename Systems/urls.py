@@ -1,6 +1,6 @@
 from rest_framework_nested import routers
 from .views import (
-    CategoryViewSet, SubcategoryViewSet, ProductViewSet,
+    BlogViewSet, CategoryViewSet, SubcategoryViewSet, ProductViewSet,
     RegisterView, CustomTokenObtainPairView, UserProfileView,
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
@@ -15,6 +15,7 @@ router = routers.DefaultRouter()
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'subcategories', SubcategoryViewSet, basename='subcategory')
 router.register(r'products', ProductViewSet, basename='product')
+router.register(r'blogs', BlogViewSet, basename='blog')
 
 # Nested routers
 categories_router = routers.NestedDefaultRouter(router, r'categories', lookup='category')

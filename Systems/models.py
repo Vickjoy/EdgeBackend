@@ -147,3 +147,29 @@ class SpecificationRow(models.Model):
 
     def __str__(self):
         return f"{self.key}: {self.value}"
+    
+class Blog(models.Model):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(unique=True, blank=True)
+    excerpt = models.TextField()
+    content = models.TextField()
+    image = models.ImageField(upload_to='blogs/', blank=True, null=True, default='blogs/default.jpeg')
+    source_name = models.CharField(max_length=100, blank=True, null=True)
+    source_url = models.URLField(blank=True, null=True)
+    is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.title)
+            slug = base_slug
+            counter = 1
+            while Blog.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.title

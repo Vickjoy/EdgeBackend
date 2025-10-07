@@ -18,10 +18,10 @@ from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 import logging
 from django.core.cache import cache
 
-from .models import Category, Subcategory, Product
+from .models import Category, Subcategory, Product, Blog
 from .serializers import (
     CategorySerializer, SubcategorySerializer, ProductSerializer,
-    UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer
+    UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer, BlogSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 
@@ -513,3 +513,29 @@ class ProductRelatedView(generics.ListAPIView):
         ctx = super().get_serializer_context()
         ctx['request'] = self.request
         return ctx
+
+class BlogViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Public read-only access to published blogs.
+    Admin can manage via Django admin panel.
+    """
+    queryset = Blog.objects.filter(is_published=True).order_by('-created_at')
+    serializer_class = BlogSerializer
+    permission_classes = [AllowAny]
+    lookup_field = 'slug'
+    pagination_class = None
+
+    @method_decorator(cache_page(60 * 15))
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @method_decorator(cache_page(60 * 15))
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+    
+    @action(detail=False, methods=['get'], url_path='footer')
+    def footer_blogs(self, request):
+        """Returns only the 3 latest blogs for footer display"""
+        blogs = self.get_queryset()[:3]
+        serializer = self.get_serializer(blogs, many=True)
+        return Response(serializer.data)

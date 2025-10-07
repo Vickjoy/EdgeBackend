@@ -3,7 +3,7 @@ from django.utils.safestring import mark_safe
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
-from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow
+from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog
 from allauth.socialaccount.models import SocialApp
 
 admin.site.unregister(SocialApp)
@@ -172,3 +172,33 @@ class SpecificationTableAdmin(admin.ModelAdmin):
 class SpecificationRowAdmin(admin.ModelAdmin):
     list_display = ('table', 'key', 'value')
     list_filter = ('table__product__subcategory__category',)
+
+@admin.register(Blog)
+class BlogAdmin(admin.ModelAdmin):
+    list_display = ('title', 'source_name', 'is_published', 'created_at')
+    list_filter = ('is_published', 'created_at')
+    search_fields = ('title', 'content', 'source_name')
+    # Remove prepopulated_fields - it conflicts with readonly_fields
+    readonly_fields = ('created_at', 'updated_at', 'slug')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('title', 'slug', 'excerpt', 'is_published')
+        }),
+        ('Content', {
+            'fields': ('content', 'image')
+        }),
+        ('Source Attribution', {
+            'fields': ('source_name', 'source_url'),
+            'description': 'Credit external sources if applicable'
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_readonly_fields(self, request, obj=None):
+        if obj:
+            return self.readonly_fields + ('slug',)
+        return self.readonly_fields
