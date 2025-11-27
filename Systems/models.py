@@ -96,6 +96,20 @@ class Product(models.Model):
     )
     stock = models.PositiveIntegerField(default=0, help_text="Number of items in stock")
 
+    # ✅ NEW SEO FIELDS (optional overrides)
+    meta_title = models.CharField(
+        max_length=60, 
+        blank=True, 
+        null=True,
+        help_text="Custom SEO title (max 60 chars). Leave blank for auto-generated title."
+    )
+    meta_description = models.CharField(
+        max_length=155, 
+        blank=True, 
+        null=True,
+        help_text="Custom SEO description (max 155 chars). Leave blank for auto-generated description."
+    )
+
     def save(self, *args, **kwargs):
         # Auto-generate slug from name if not provided
         if not self.slug:

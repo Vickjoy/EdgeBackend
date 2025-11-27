@@ -115,7 +115,7 @@ class SpecificationTableSerializer(serializers.ModelSerializer):
 
 
 # -----------------------------
-# PRODUCT SERIALIZER
+# PRODUCT SERIALIZER (with SEO fields)
 # -----------------------------
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
@@ -135,6 +135,10 @@ class ProductSerializer(serializers.ModelSerializer):
     documentation_label = serializers.SerializerMethodField()
     features = serializers.CharField(required=False, allow_blank=True)
     status = serializers.SerializerMethodField()
+    
+    # ✅ NEW: Expose SEO fields to frontend
+    meta_title = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    meta_description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Product
@@ -143,7 +147,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'description', 'features', 'image',
             'spec_tables', 'documentation', 'documentation_url', 'documentation_label',
             'status', 'stock', 'subcategory', 'subcategory_detail',
-            'category', 'slug', 'subcategory_slug', 'category_slug'
+            'category', 'slug', 'subcategory_slug', 'category_slug',
+            'meta_title', 'meta_description'  # ✅ Added SEO fields
         ]
 
     # -----------------------------

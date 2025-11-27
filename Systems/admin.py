@@ -66,7 +66,8 @@ class ProductResource(resources.ModelResource):
         import_id_fields = ['slug']
         fields = (
             'name', 'price', 'price_visibility', 'description', 'documentation', 'documentation_label',
-            'status', 'stock', 'image', 'slug', 'subcategory', 'category'
+            'status', 'stock', 'image', 'slug', 'subcategory', 'category',
+            'meta_title', 'meta_description'  # ✅ Added SEO fields to import/export
         )
         skip_unchanged = True
         report_skipped = True
@@ -84,11 +85,11 @@ class ProductResource(resources.ModelResource):
         except Subcategory.DoesNotExist:
             raise Exception(f"Subcategory '{subcategory_name}' under '{category_name}' not found.")
 
-# Product Admin
+# Product Admin with SEO fields
 class ProductAdmin(ImportExportModelAdmin):
     resource_class = ProductResource
     inlines = [SpecificationTableInline]
-    list_display = ('name', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock', 'image_preview', 'documentation_preview')
+    list_display = ('name', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock', 'image_preview', 'documentation_preview', 'has_seo')
     list_filter = ('price_visibility', 'status', 'subcategory__category')
     readonly_fields = ('get_category', 'image_preview', 'slug')
     
@@ -111,11 +112,24 @@ class ProductAdmin(ImportExportModelAdmin):
             'fields': ('documentation', 'documentation_label'),
             'description': 'Enter the URL for the product datasheet and the text to display for the link.'
         }),
+        # ✅ NEW SEO Section
+        ('SEO (Search Engine Optimization)', {
+            'fields': ('meta_title', 'meta_description'),
+            'description': 'Optional: Override auto-generated SEO tags. Leave blank to use automatic generation.',
+            'classes': ('collapse',)  # Makes it collapsible to keep UI clean
+        }),
     )
 
     def get_category(self, obj):
         return obj.subcategory.category if obj.subcategory else None
     get_category.short_description = 'Category'
+
+    def has_seo(self, obj):
+        """Show if product has custom SEO set"""
+        if obj.meta_title or obj.meta_description:
+            return mark_safe('<span style="color: green;">✓ Custom</span>')
+        return mark_safe('<span style="color: gray;">Auto</span>')
+    has_seo.short_description = 'SEO'
 
     def image_preview(self, obj):
         if obj.image:
@@ -178,7 +192,6 @@ class BlogAdmin(admin.ModelAdmin):
     list_display = ('title', 'source_name', 'is_published', 'created_at')
     list_filter = ('is_published', 'created_at')
     search_fields = ('title', 'content', 'source_name')
-    # Remove prepopulated_fields - it conflicts with readonly_fields
     readonly_fields = ('created_at', 'updated_at', 'slug')
     
     fieldsets = (
