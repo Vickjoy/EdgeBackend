@@ -17,6 +17,7 @@ from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 import logging
 from django.core.cache import cache
+from django.conf import settings
 
 from .models import Category, Subcategory, Product, Blog
 from .serializers import (
@@ -26,6 +27,51 @@ from .serializers import (
 from rest_framework.pagination import PageNumberPagination
 
 logger = logging.getLogger(__name__)
+
+# ===============================
+# Cache Utility Functions (✅ NEW)
+# ===============================
+
+def invalidate_product_caches(product=None, subcategory=None):
+    """
+    Invalidate all product-related caches when data changes.
+    """
+    cache_keys_to_clear = [
+        settings.CACHE_KEYS['all_products'],
+        settings.CACHE_KEYS['all_categories'],
+        settings.CACHE_KEYS['all_subcategories'],
+    ]
+    
+    if product:
+        cache_keys_to_clear.extend([
+            settings.CACHE_KEYS['product_detail'].format(product.slug),
+            settings.CACHE_KEYS['related_products'].format(product.slug),
+            settings.CACHE_KEYS['products_by_subcategory'].format(product.subcategory.slug),
+        ])
+    
+    if subcategory:
+        cache_keys_to_clear.append(
+            settings.CACHE_KEYS['products_by_subcategory'].format(subcategory.slug)
+        )
+    
+    cache.delete_many(cache_keys_to_clear)
+    logger.info(f"Cleared {len(cache_keys_to_clear)} cache keys")
+
+
+def get_cached_queryset(cache_key, queryset_func, timeout=900):
+    """
+    Generic function to cache querysets.
+    """
+    cached_data = cache.get(cache_key)
+    if cached_data is not None:
+        logger.debug(f"Cache hit for key: {cache_key}")
+        return cached_data
+    
+    data = queryset_func()
+    cache.set(cache_key, data, timeout)
+    logger.debug(f"Cache miss - stored key: {cache_key}")
+    return data
+
 
 # -------------------------
 # Authentication Views
@@ -54,6 +100,7 @@ class RegisterView(generics.CreateAPIView):
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
     
@@ -79,12 +126,14 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             "refresh": tokens['refresh']
         })
 
+
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer
     permission_classes = [IsAuthenticated]
     
     def get_object(self):
         return self.request.user
+
 
 # -------------------------
 # Social Login Callback
@@ -104,16 +153,17 @@ class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
         logger.debug("OAuth failed, redirecting to login")
         return HttpResponseRedirect("http://localhost:5173/user-login")
 
+
 # -------------------------
-# Category / Subcategory / Product ViewSets with corrected caching
+# Category ViewSet (✅ UPDATED WITH CACHING)
 # -------------------------
 
 class CategoryViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.all().order_by('id')  # ✅ Added explicit ordering
+    queryset = Category.objects.all().order_by('id')
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
-    pagination_class = None  
+    pagination_class = None
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -122,19 +172,20 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         obj = serializer.save()
-        cache.clear()
+        invalidate_product_caches()
         return obj
 
     def perform_update(self, serializer):
         obj = serializer.save()
-        cache.clear()
+        invalidate_product_caches()
         return obj
 
     def perform_destroy(self, instance):
         super().perform_destroy(instance)
-        cache.clear()
+        invalidate_product_caches()
 
-    @method_decorator(cache_page(60 * 15))
+    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
+    @method_decorator(vary_on_headers('Authorization'))
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
@@ -153,12 +204,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError({"detail": "Category not found."})
 
 
+# -------------------------
+# Subcategory ViewSet (✅ UPDATED WITH CACHING)
+# -------------------------
+
 class SubcategoryViewSet(viewsets.ModelViewSet):
-    queryset = Subcategory.objects.all().order_by('id')  # ✅ Added explicit ordering
+    queryset = Subcategory.objects.all().order_by('id')
     serializer_class = SubcategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
-    pagination_class = None  
+    pagination_class = None
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -178,19 +233,20 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
         else:
             raise serializers.ValidationError({"detail": "Category not specified."})
         obj = serializer.save(category=category)
-        cache.clear()
+        invalidate_product_caches()
         return obj
 
     def perform_update(self, serializer):
         obj = serializer.save()
-        cache.clear()
+        invalidate_product_caches()
         return obj
 
     def perform_destroy(self, instance):
         super().perform_destroy(instance)
-        cache.clear()
+        invalidate_product_caches()
 
-    @method_decorator(cache_page(60 * 15))
+    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
+    @method_decorator(vary_on_headers('Authorization'))
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
@@ -203,7 +259,7 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
         category_slug = self.kwargs.get('category_slug')
         if category_slug:
             category = get_object_or_404(Category, slug=category_slug)
-            return queryset.filter(category=category).order_by('id')  # ✅ Maintain ordering after filter
+            return queryset.filter(category=category).order_by('id')
         return queryset
 
     def get_object(self):
@@ -213,6 +269,10 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError({"detail": "Subcategory not found."})
 
 
+# -------------------------
+# Product ViewSet (✅ UPDATED WITH CACHING)
+# -------------------------
+
 class DefaultPagination(PageNumberPagination):
     page_size = 40
     page_size_query_param = 'page_size'
@@ -220,7 +280,7 @@ class DefaultPagination(PageNumberPagination):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.all().order_by('-id')  # ✅ Added explicit ordering
+    queryset = Product.objects.all().order_by('-id')
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
@@ -251,38 +311,41 @@ class ProductViewSet(viewsets.ModelViewSet):
             validated_data['stock'] = 1
         if 'status' not in validated_data:
             validated_data['status'] = Product.IN_STOCK
-        serializer.save(subcategory=subcategory)
-        cache.clear()
+        product = serializer.save(subcategory=subcategory)
+        invalidate_product_caches(product=product, subcategory=subcategory)
 
     def perform_update(self, serializer):
-        obj = serializer.save()
-        cache.clear()
-        return obj
+        product = serializer.save()
+        invalidate_product_caches(product=product, subcategory=product.subcategory)
+        return product
 
     def perform_destroy(self, instance):
+        subcategory = instance.subcategory
         super().perform_destroy(instance)
-        cache.clear()
+        invalidate_product_caches(subcategory=subcategory)
 
     def get_queryset(self):
         queryset = super().get_queryset()
         subcategory_slug = self.kwargs.get('subcategory_slug')
         subcategory_pk = self.kwargs.get('subcategory_pk')
         qp_subcat = self.request.query_params.get('subcategory')
+        
         if subcategory_slug:
             subcategory = get_object_or_404(Subcategory, slug=subcategory_slug)
-            return queryset.filter(subcategory=subcategory).order_by('-id')  # ✅ Maintain ordering
+            return queryset.filter(subcategory=subcategory).order_by('-id')
         if subcategory_pk:
             if str(subcategory_pk).isdigit():
                 subcategory = get_object_or_404(Subcategory, id=subcategory_pk)
             else:
                 subcategory = get_object_or_404(Subcategory, slug=subcategory_pk)
-            return queryset.filter(subcategory=subcategory).order_by('-id')  # ✅ Maintain ordering
+            return queryset.filter(subcategory=subcategory).order_by('-id')
         if qp_subcat:
             if str(qp_subcat).isdigit():
-                return queryset.filter(subcategory__id=qp_subcat).order_by('-id')  # ✅ Maintain ordering
-            return queryset.filter(subcategory__slug=qp_subcat).order_by('-id')  # ✅ Maintain ordering
+                return queryset.filter(subcategory__id=qp_subcat).order_by('-id')
+            return queryset.filter(subcategory__slug=qp_subcat).order_by('-id')
         return queryset
 
+    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
     def retrieve(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
@@ -297,35 +360,57 @@ class ProductViewSet(viewsets.ModelViewSet):
         return context
 
     @action(detail=False, methods=['get'])
+    @method_decorator(cache_page(60 * 15))
     def all_categories(self, request):
-        categories = Category.objects.all().order_by('id')  # ✅ Added ordering
-        serializer = CategorySerializer(categories, many=True, context={'request': request})
-        return Response(serializer.data)
+        """Cached list of all categories"""
+        cache_key = settings.CACHE_KEYS['all_categories']
+        
+        def fetch_categories():
+            categories = Category.objects.all().order_by('id')
+            serializer = CategorySerializer(categories, many=True, context={'request': request})
+            return serializer.data
+        
+        data = get_cached_queryset(cache_key, fetch_categories)
+        return Response(data)
 
     @action(detail=False, methods=['get'])
+    @method_decorator(cache_page(60 * 15))
     def all_subcategories(self, request):
-        subcategories = Subcategory.objects.all().order_by('id')  # ✅ Added ordering
-        serializer = SubcategorySerializer(subcategories, many=True, context={'request': request})
-        return Response(serializer.data)
+        """Cached list of all subcategories"""
+        cache_key = settings.CACHE_KEYS['all_subcategories']
+        
+        def fetch_subcategories():
+            subcategories = Subcategory.objects.all().order_by('id')
+            serializer = SubcategorySerializer(subcategories, many=True, context={'request': request})
+            return serializer.data
+        
+        data = get_cached_queryset(cache_key, fetch_subcategories)
+        return Response(data)
 
     @action(detail=True, methods=['get'], url_path='related', permission_classes=[AllowAny])
+    @method_decorator(cache_page(60 * 15))
     def related(self, request, slug=None):
         """
-        Returns products from the same subcategory, excluding the current product.
-        Limited to 8 products, ordered by most recent.
+        Returns cached related products from the same subcategory.
         """
         try:
             product = self.get_object()
-            related_products = Product.objects.filter(
-                subcategory=product.subcategory
-            ).exclude(
-                id=product.id
-            ).order_by('-id')[:8]
+            cache_key = settings.CACHE_KEYS['related_products'].format(slug)
             
-            serializer = self.get_serializer(related_products, many=True)
-            return Response(serializer.data)
+            def fetch_related():
+                related_products = Product.objects.filter(
+                    subcategory=product.subcategory
+                ).exclude(
+                    id=product.id
+                ).order_by('-id')[:8]
+                serializer = self.get_serializer(related_products, many=True)
+                return serializer.data
+            
+            data = get_cached_queryset(cache_key, fetch_related)
+            return Response(data)
         except Http404:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
 
 # -------------------------
 # Admin-only PK-based views
@@ -336,6 +421,16 @@ class CategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CategorySerializer
     permission_classes = [IsAdminUser]
     lookup_field = 'pk'
+    
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        invalidate_product_caches()
+        return obj
+    
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        invalidate_product_caches()
+
 
 class SubcategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = SubcategorySerializer
@@ -345,7 +440,17 @@ class SubcategoryAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         category_slug = self.kwargs.get('category_slug')
         category = get_object_or_404(Category, slug=category_slug)
-        return Subcategory.objects.filter(category=category).order_by('id')  # ✅ Added ordering
+        return Subcategory.objects.filter(category=category).order_by('id')
+    
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        invalidate_product_caches()
+        return obj
+    
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        invalidate_product_caches()
+
 
 class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.all()
@@ -357,6 +462,17 @@ class ProductAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
         ctx = super().get_serializer_context()
         ctx['request'] = self.request
         return ctx
+    
+    def perform_update(self, serializer):
+        product = serializer.save()
+        invalidate_product_caches(product=product, subcategory=product.subcategory)
+        return product
+    
+    def perform_destroy(self, instance):
+        subcategory = instance.subcategory
+        super().perform_destroy(instance)
+        invalidate_product_caches(subcategory=subcategory)
+
 
 # -------------------------
 # Legacy function-based views
@@ -373,6 +489,7 @@ def me_view(request):
         'is_staff': user.is_staff,
         'is_superuser': user.is_superuser,
     })
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -398,6 +515,7 @@ def register_view(request):
         "access": str(access),
         "refresh": str(refresh)
     }, status=status.HTTP_201_CREATED)
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -427,10 +545,12 @@ def login_view(request):
         "refresh": str(refresh)
     })
 
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
     return Response({"message": "Logout successful"})
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -446,16 +566,14 @@ def current_user_view(request):
         'last_login': user.last_login,
     })
 
-# -------------------------
-# Social login success handler
-# -------------------------
 
 @login_required
 def social_login_success(request):
     return redirect('http://localhost:5173/')
 
+
 # -------------------------
-# Public product endpoints with caching
+# Public product endpoints (✅ UPDATED WITH CACHING)
 # -------------------------
 
 class ContractPagination(PageNumberPagination):
@@ -463,21 +581,32 @@ class ContractPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-@method_decorator(cache_page(60 * 15), name='dispatch')
+
+@method_decorator(cache_page(60 * 15), name='dispatch')  # ✅ 15 minutes cache
+@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class ProductsBySubcategoryView(generics.ListAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
     pagination_class = ContractPagination
 
     def get_queryset(self):
-        return Product.objects.filter(subcategory__slug=self.kwargs.get('subcategory_slug')).order_by('-id')
+        subcategory_slug = self.kwargs.get('subcategory_slug')
+        cache_key = settings.CACHE_KEYS['products_by_subcategory'].format(subcategory_slug)
+        
+        def fetch_products():
+            return list(Product.objects.filter(
+                subcategory__slug=subcategory_slug
+            ).order_by('-id'))
+        
+        return get_cached_queryset(cache_key, fetch_products, timeout=900)
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         ctx['request'] = self.request
         return ctx
 
-@method_decorator(cache_page(60 * 15), name='dispatch')
+
+@method_decorator(cache_page(60 * 15), name='dispatch')  # ✅ 15 minutes cache
 class ProductDetailView(generics.RetrieveAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
@@ -490,10 +619,11 @@ class ProductDetailView(generics.RetrieveAPIView):
         ctx['request'] = self.request
         return ctx
 
-@method_decorator(cache_page(60 * 15), name='dispatch')
+
+@method_decorator(cache_page(60 * 15), name='dispatch')  # ✅ 15 minutes cache
 class ProductRelatedView(generics.ListAPIView):
     """
-    Returns related products from the same subcategory.
+    Returns cached related products from the same subcategory.
     """
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
@@ -503,21 +633,30 @@ class ProductRelatedView(generics.ListAPIView):
         product_slug = self.kwargs.get('product_slug')
         product = get_object_or_404(Product, slug=product_slug)
         
-        return Product.objects.filter(
-            subcategory=product.subcategory
-        ).exclude(
-            id=product.id
-        ).order_by('-id')[:8]
+        cache_key = settings.CACHE_KEYS['related_products'].format(product_slug)
+        
+        def fetch_related():
+            return list(Product.objects.filter(
+                subcategory=product.subcategory
+            ).exclude(
+                id=product.id
+            ).order_by('-id')[:8])
+        
+        return get_cached_queryset(cache_key, fetch_related, timeout=900)
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         ctx['request'] = self.request
         return ctx
 
+
+# -------------------------
+# Blog ViewSet (✅ WITH CACHING)
+# -------------------------
+
 class BlogViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Public read-only access to published blogs.
-    Admin can manage via Django admin panel.
+    Public read-only access to published blogs with caching.
     """
     queryset = Blog.objects.filter(is_published=True).order_by('-created_at')
     serializer_class = BlogSerializer
@@ -525,7 +664,7 @@ class BlogViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = 'slug'
     pagination_class = None
 
-    @method_decorator(cache_page(60 * 15))
+    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
@@ -534,8 +673,9 @@ class BlogViewSet(viewsets.ReadOnlyModelViewSet):
         return super().retrieve(request, *args, **kwargs)
     
     @action(detail=False, methods=['get'], url_path='footer')
+    @method_decorator(cache_page(60 * 15))
     def footer_blogs(self, request):
-        """Returns only the 3 latest blogs for footer display"""
+        """Returns cached 3 latest blogs for footer display"""
         blogs = self.get_queryset()[:3]
         serializer = self.get_serializer(blogs, many=True)
         return Response(serializer.data)

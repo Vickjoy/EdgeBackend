@@ -3,6 +3,7 @@ from corsheaders.defaults import default_headers
 from datetime import timedelta
 from decouple import config, Csv
 import cloudinary
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -26,7 +27,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework.authtoken',
-    'rest_framework_simplejwt',  # Added JWT
+    'rest_framework_simplejwt',
     'corsheaders',
     'cloudinary',
     'cloudinary_storage',
@@ -45,7 +46,8 @@ INSTALLED_APPS = [
 SITE_ID = 3
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # must be near the top
+    'django.middleware.cache.UpdateCacheMiddleware',  # ✅ Must be first for site-wide caching
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -53,10 +55,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'allauth.account.middleware.AccountMiddleware',  # added for Allauth
-    # Add cache middleware for better performance
-    'django.middleware.cache.UpdateCacheMiddleware',
-    'django.middleware.cache.FetchFromCacheMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
+    'django.middleware.cache.FetchFromCacheMiddleware',  # ✅ Must be last for site-wide caching
 ]
 
 ROOT_URLCONF = 'Edge.urls'
@@ -68,7 +68,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
-                'django.template.context_processors.request',  # required by Allauth
+                'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
@@ -87,32 +87,36 @@ DATABASES = {
 }
 
 # ===============================
-# Caching Configuration
+# Caching Configuration (✅ UPDATED)
 # ===============================
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'edgesystems-cache',
+        'LOCATION': 'edgesystems-unique-cache',
         'TIMEOUT': 900,  # 15 minutes default timeout
         'OPTIONS': {
-            'MAX_ENTRIES': 1000,
-            'CULL_FREQUENCY': 3,
+            'MAX_ENTRIES': 2000,  # Increased for better capacity
+            'CULL_FREQUENCY': 3,  # Remove 1/3 of entries when max is reached
         }
     },
-    # Optional: Add Redis cache for production
-    # 'redis': {
-    #     'BACKEND': 'django_redis.cache.RedisCache',
-    #     'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/1'),
-    #     'OPTIONS': {
-    #         'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-    #     }
-    # }
 }
 
-# Cache key prefixes to avoid collisions
+# Cache middleware configuration
 CACHE_MIDDLEWARE_ALIAS = 'default'
-CACHE_MIDDLEWARE_SECONDS = 900  # 15 minutes
+CACHE_MIDDLEWARE_SECONDS = 300  # 5 minutes for general pages
 CACHE_MIDDLEWARE_KEY_PREFIX = 'edgesystems'
+
+# Cache key prefixes for different data types
+CACHE_KEYS = {
+    'all_products': 'products:all',
+    'product_detail': 'product:detail:{}',
+    'products_by_subcategory': 'products:subcategory:{}',
+    'related_products': 'products:related:{}',
+    'all_categories': 'categories:all',
+    'all_subcategories': 'subcategories:all',
+    'category_detail': 'category:detail:{}',
+    'subcategory_detail': 'subcategory:detail:{}',
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -147,13 +151,13 @@ SIMPLE_JWT = {
 # ===============================
 # Session Configuration
 # ===============================
-SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'  # Use cache for sessions
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
-SESSION_CACHE_ALIAS = 'default'  # Use default cache for sessions
+SESSION_CACHE_ALIAS = 'default'
 
 # ===============================
 # CORS Configuration
@@ -184,8 +188,8 @@ CSRF_TRUSTED_ORIGINS = [
 # Authentication Backends
 # ===============================
 AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',  # default
-    'allauth.account.auth_backends.AuthenticationBackend',  # required by Allauth
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
 # ===============================
@@ -213,7 +217,6 @@ cloudinary.config(
     secure=True
 )
 
-# Use Cloudinary for media storage
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 # ===============================
@@ -250,14 +253,13 @@ SOCIALACCOUNT_ADAPTER = 'Systems.adapters.CustomSocialAccountAdapter'
 ACCOUNT_ADAPTER = 'Systems.adapters.CustomAccountAdapter'
 
 SOCIALACCOUNT_LOGIN_ON_GET = True
-SOCIALACCOUNT_AUTO_SIGNUP = True  # Automatically create user accounts
+SOCIALACCOUNT_AUTO_SIGNUP = True
 
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': ['profile', 'email'],
         'AUTH_PARAMS': {'access_type': 'online'},
         'OAUTH_PKCE_ENABLED': True,
-        # Remove the APP section - use admin configuration instead
     }
 }
 
@@ -276,7 +278,6 @@ LOGGING = {
 }
 
 # Create logs directory if it doesn't exist
-import os
 logs_dir = BASE_DIR / 'logs'
 os.makedirs(logs_dir, exist_ok=True)
 

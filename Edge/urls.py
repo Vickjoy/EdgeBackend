@@ -4,6 +4,14 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 from django.views.generic import TemplateView
+from django.contrib.sitemaps.views import sitemap
+from Systems.sitemaps import ProductSitemap, BlogSitemap
+
+# Sitemap configuration
+sitemaps = {
+    'products': ProductSitemap,
+    'blogs': BlogSitemap,
+}
 
 auth_urlpatterns = [
     # Django REST Framework browsable API auth (login/logout buttons in DRF UI)
@@ -27,6 +35,9 @@ urlpatterns = [
     path('api/', include('Systems.urls')),  # include your app's API urls
     path('', include(auth_urlpatterns)),    # include auth urls
     path('accounts/', include('allauth.urls')),
+    
+    # Sitemap at root level
+    path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='django-sitemap'),
 ]
 
 if settings.DEBUG:
