@@ -65,9 +65,9 @@ class ProductResource(resources.ModelResource):
         model = Product
         import_id_fields = ['slug']
         fields = (
-            'name', 'price', 'price_visibility', 'description', 'documentation', 'documentation_label',
+            'name', 'brand', 'sku', 'price', 'price_visibility', 'description', 'documentation', 'documentation_label',
             'status', 'stock', 'image', 'slug', 'subcategory', 'category',
-            'meta_title', 'meta_description'  # ✅ Added SEO fields to import/export
+            'meta_title', 'meta_description'  # ✅ SEO fields
         )
         skip_unchanged = True
         report_skipped = True
@@ -85,17 +85,26 @@ class ProductResource(resources.ModelResource):
         except Subcategory.DoesNotExist:
             raise Exception(f"Subcategory '{subcategory_name}' under '{category_name}' not found.")
 
-# Product Admin with SEO fields
+# Product Admin with Brand and SKU
 class ProductAdmin(ImportExportModelAdmin):
     resource_class = ProductResource
     inlines = [SpecificationTableInline]
-    list_display = ('name', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock', 'image_preview', 'documentation_preview', 'has_seo')
-    list_filter = ('price_visibility', 'status', 'subcategory__category')
+    
+    # ✅ Updated list_display with brand and sku
+    list_display = ('name', 'brand', 'sku', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock', 'image_preview', 'documentation_preview', 'has_seo')
+    
+    # ✅ Updated list_filter to include brand
+    list_filter = ('price_visibility', 'status', 'brand', 'subcategory__category')
+    
+    # ✅ Updated search_fields to include brand and sku
+    search_fields = ('name', 'brand', 'sku', 'description')
+    
     readonly_fields = ('get_category', 'image_preview', 'slug')
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'slug', 'subcategory')
+            'fields': ('name', 'slug', 'brand', 'sku', 'subcategory'),
+            'description': 'Product identification: name, brand (e.g., Eaton, Apollo), and SKU/model number'
         }),
         ('Inventory', {
             'fields': ('stock', 'status'),
@@ -112,11 +121,10 @@ class ProductAdmin(ImportExportModelAdmin):
             'fields': ('documentation', 'documentation_label'),
             'description': 'Enter the URL for the product datasheet and the text to display for the link.'
         }),
-        # ✅ NEW SEO Section
         ('SEO (Search Engine Optimization)', {
             'fields': ('meta_title', 'meta_description'),
             'description': 'Optional: Override auto-generated SEO tags. Leave blank to use automatic generation.',
-            'classes': ('collapse',)  # Makes it collapsible to keep UI clean
+            'classes': ('collapse',)
         }),
     )
 

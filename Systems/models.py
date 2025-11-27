@@ -70,6 +70,21 @@ class Product(models.Model):
 
     subcategory = models.ForeignKey(Subcategory, related_name='products', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
+    
+    # ✅ NEW: Brand and SKU fields for better product identification
+    brand = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        help_text="Product brand (e.g., Eaton, Apollo, Giganet)"
+    )
+    sku = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True,
+        help_text="Stock Keeping Unit / Model Number (e.g., EFCP-123)"
+    )
+    
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     price_visibility = models.CharField(
         max_length=20, 
@@ -96,7 +111,7 @@ class Product(models.Model):
     )
     stock = models.PositiveIntegerField(default=0, help_text="Number of items in stock")
 
-    # ✅ NEW SEO FIELDS (optional overrides)
+    # SEO FIELDS (optional overrides)
     meta_title = models.CharField(
         max_length=60, 
         blank=True, 
