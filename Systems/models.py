@@ -71,7 +71,7 @@ class Product(models.Model):
     subcategory = models.ForeignKey(Subcategory, related_name='products', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     
-    # ✅ NEW: Brand and SKU fields for better product identification
+    # Brand and SKU fields for better product identification
     brand = models.CharField(
         max_length=255, 
         blank=True, 
@@ -83,6 +83,12 @@ class Product(models.Model):
         blank=True, 
         null=True,
         help_text="Stock Keeping Unit / Model Number (e.g., EFCP-123)"
+    )
+
+    # ✅ FIXED: Single is_popular field (removed duplicate)
+    is_popular = models.BooleanField(
+        default=False,
+        help_text="Mark this product as popular to feature it on the homepage carousel"
     )
     
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)

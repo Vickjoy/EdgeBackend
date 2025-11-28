@@ -152,7 +152,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'spec_tables', 'documentation', 'documentation_url', 'documentation_label',
             'status', 'stock', 'subcategory', 'subcategory_detail',
             'category', 'slug', 'subcategory_slug', 'category_slug',
-            'brand', 'sku',  # ✅ Added brand and SKU
+            'brand', 'sku', 'is_popular',
             'meta_title', 'meta_description'
         ]
 

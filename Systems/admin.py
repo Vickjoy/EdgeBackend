@@ -67,7 +67,7 @@ class ProductResource(resources.ModelResource):
         fields = (
             'name', 'brand', 'sku', 'price', 'price_visibility', 'description', 'documentation', 'documentation_label',
             'status', 'stock', 'image', 'slug', 'subcategory', 'category',
-            'meta_title', 'meta_description'  # ✅ SEO fields
+            'meta_title', 'meta_description'
         )
         skip_unchanged = True
         report_skipped = True
@@ -91,10 +91,10 @@ class ProductAdmin(ImportExportModelAdmin):
     inlines = [SpecificationTableInline]
     
     # ✅ Updated list_display with brand and sku
-    list_display = ('name', 'brand', 'sku', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock', 'image_preview', 'documentation_preview', 'has_seo')
+    list_display = ('name', 'brand', 'sku', 'subcategory', 'get_category', 'price', 'price_visibility', 'status', 'stock','is_popular', 'image_preview', 'documentation_preview', 'has_seo')
     
     # ✅ Updated list_filter to include brand
-    list_filter = ('price_visibility', 'status', 'brand', 'subcategory__category')
+    list_filter = ('price_visibility', 'status', 'brand','is_popular', 'subcategory__category')
     
     # ✅ Updated search_fields to include brand and sku
     search_fields = ('name', 'brand', 'sku', 'description')
@@ -126,6 +126,12 @@ class ProductAdmin(ImportExportModelAdmin):
             'description': 'Optional: Override auto-generated SEO tags. Leave blank to use automatic generation.',
             'classes': ('collapse',)
         }),
+
+        ('Featured Products', {
+            'fields': ('is_popular',),
+            'description': 'Mark this product to display in the homepage popular products carousel',
+            'classes': ('collapse',)
+        })
     )
 
     def get_category(self, obj):

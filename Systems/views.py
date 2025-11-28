@@ -29,7 +29,7 @@ from rest_framework.pagination import PageNumberPagination
 logger = logging.getLogger(__name__)
 
 # ===============================
-# Cache Utility Functions (✅ NEW)
+# Cache Utility Functions
 # ===============================
 
 def invalidate_product_caches(product=None, subcategory=None):
@@ -37,21 +37,27 @@ def invalidate_product_caches(product=None, subcategory=None):
     Invalidate all product-related caches when data changes.
     """
     cache_keys_to_clear = [
-        settings.CACHE_KEYS['all_products'],
-        settings.CACHE_KEYS['all_categories'],
-        settings.CACHE_KEYS['all_subcategories'],
+        settings.CACHE_KEYS.get('all_products', 'all_products'),
+        settings.CACHE_KEYS.get('all_categories', 'all_categories'),
+        settings.CACHE_KEYS.get('all_subcategories', 'all_subcategories'),
+        'popular_products_list',  # Popular products cache
     ]
     
     if product:
+        product_detail_key = settings.CACHE_KEYS.get('product_detail', 'product_detail_{}')
+        related_key = settings.CACHE_KEYS.get('related_products', 'related_products_{}')
+        subcat_key = settings.CACHE_KEYS.get('products_by_subcategory', 'products_by_subcategory_{}')
+        
         cache_keys_to_clear.extend([
-            settings.CACHE_KEYS['product_detail'].format(product.slug),
-            settings.CACHE_KEYS['related_products'].format(product.slug),
-            settings.CACHE_KEYS['products_by_subcategory'].format(product.subcategory.slug),
+            product_detail_key.format(product.slug) if '{}' in product_detail_key else f'product_detail_{product.slug}',
+            related_key.format(product.slug) if '{}' in related_key else f'related_products_{product.slug}',
+            subcat_key.format(product.subcategory.slug) if '{}' in subcat_key else f'products_by_subcategory_{product.subcategory.slug}',
         ])
     
     if subcategory:
+        subcat_key = settings.CACHE_KEYS.get('products_by_subcategory', 'products_by_subcategory_{}')
         cache_keys_to_clear.append(
-            settings.CACHE_KEYS['products_by_subcategory'].format(subcategory.slug)
+            subcat_key.format(subcategory.slug) if '{}' in subcat_key else f'products_by_subcategory_{subcategory.slug}'
         )
     
     cache.delete_many(cache_keys_to_clear)
@@ -155,7 +161,47 @@ class CustomGoogleOAuth2CallbackView(OAuth2CallbackView):
 
 
 # -------------------------
-# Category ViewSet (✅ UPDATED WITH CACHING)
+# Popular Products Endpoint
+# -------------------------
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def popular_products(request):
+    """Returns up to 10 popular products with caching (regardless of stock status)"""
+    cache_key = 'popular_products_list'
+    
+    # Try to get from cache
+    cached_data = cache.get(cache_key)
+    if cached_data is not None:
+        logger.debug(f"Cache hit for popular products")
+        return Response(cached_data)
+    
+    # Fetch from database - NO STATUS FILTER
+    try:
+        products = Product.objects.filter(
+            is_popular=True
+            # ✅ Removed status=Product.IN_STOCK filter
+        ).select_related('subcategory', 'subcategory__category').order_by('-id')[:10]
+        
+        serializer = ProductSerializer(
+            products, 
+            many=True, 
+            context={'request': request}
+        )
+        
+        # Cache for 15 minutes
+        cache.set(cache_key, serializer.data, 60 * 15)
+        logger.debug(f"Cache miss - stored popular products")
+        
+        return Response(serializer.data)
+    except Exception as e:
+        logger.error(f"Error fetching popular products: {str(e)}")
+        return Response(
+            {"error": "Failed to fetch popular products"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# -------------------------
+# Category ViewSet
 # -------------------------
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -184,7 +230,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         super().perform_destroy(instance)
         invalidate_product_caches()
 
-    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
+    @method_decorator(cache_page(60 * 15))
     @method_decorator(vary_on_headers('Authorization'))
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -205,7 +251,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
 
 # -------------------------
-# Subcategory ViewSet (✅ UPDATED WITH CACHING)
+# Subcategory ViewSet
 # -------------------------
 
 class SubcategoryViewSet(viewsets.ModelViewSet):
@@ -245,7 +291,7 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
         super().perform_destroy(instance)
         invalidate_product_caches()
 
-    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
+    @method_decorator(cache_page(60 * 15))
     @method_decorator(vary_on_headers('Authorization'))
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -270,7 +316,7 @@ class SubcategoryViewSet(viewsets.ModelViewSet):
 
 
 # -------------------------
-# Product ViewSet (✅ UPDATED WITH CACHING)
+# Product ViewSet
 # -------------------------
 
 class DefaultPagination(PageNumberPagination):
@@ -345,7 +391,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             return queryset.filter(subcategory__slug=qp_subcat).order_by('-id')
         return queryset
 
-    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
+    @method_decorator(cache_page(60 * 15))
     def retrieve(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
@@ -363,7 +409,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     @method_decorator(cache_page(60 * 15))
     def all_categories(self, request):
         """Cached list of all categories"""
-        cache_key = settings.CACHE_KEYS['all_categories']
+        cache_key = settings.CACHE_KEYS.get('all_categories', 'all_categories')
         
         def fetch_categories():
             categories = Category.objects.all().order_by('id')
@@ -377,7 +423,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     @method_decorator(cache_page(60 * 15))
     def all_subcategories(self, request):
         """Cached list of all subcategories"""
-        cache_key = settings.CACHE_KEYS['all_subcategories']
+        cache_key = settings.CACHE_KEYS.get('all_subcategories', 'all_subcategories')
         
         def fetch_subcategories():
             subcategories = Subcategory.objects.all().order_by('id')
@@ -395,7 +441,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         """
         try:
             product = self.get_object()
-            cache_key = settings.CACHE_KEYS['related_products'].format(slug)
+            related_key = settings.CACHE_KEYS.get('related_products', 'related_products_{}')
+            cache_key = related_key.format(slug) if '{}' in related_key else f'related_products_{slug}'
             
             def fetch_related():
                 related_products = Product.objects.filter(
@@ -573,7 +620,7 @@ def social_login_success(request):
 
 
 # -------------------------
-# Public product endpoints (✅ UPDATED WITH CACHING)
+# Public product endpoints
 # -------------------------
 
 class ContractPagination(PageNumberPagination):
@@ -582,7 +629,7 @@ class ContractPagination(PageNumberPagination):
     max_page_size = 100
 
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # ✅ 15 minutes cache
+@method_decorator(cache_page(60 * 15), name='dispatch')
 @method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class ProductsBySubcategoryView(generics.ListAPIView):
     serializer_class = ProductSerializer
@@ -591,7 +638,8 @@ class ProductsBySubcategoryView(generics.ListAPIView):
 
     def get_queryset(self):
         subcategory_slug = self.kwargs.get('subcategory_slug')
-        cache_key = settings.CACHE_KEYS['products_by_subcategory'].format(subcategory_slug)
+        subcat_key = settings.CACHE_KEYS.get('products_by_subcategory', 'products_by_subcategory_{}')
+        cache_key = subcat_key.format(subcategory_slug) if '{}' in subcat_key else f'products_by_subcategory_{subcategory_slug}'
         
         def fetch_products():
             return list(Product.objects.filter(
@@ -606,7 +654,7 @@ class ProductsBySubcategoryView(generics.ListAPIView):
         return ctx
 
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # ✅ 15 minutes cache
+@method_decorator(cache_page(60 * 15), name='dispatch')
 class ProductDetailView(generics.RetrieveAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
@@ -620,7 +668,7 @@ class ProductDetailView(generics.RetrieveAPIView):
         return ctx
 
 
-@method_decorator(cache_page(60 * 15), name='dispatch')  # ✅ 15 minutes cache
+@method_decorator(cache_page(60 * 15), name='dispatch')
 class ProductRelatedView(generics.ListAPIView):
     """
     Returns cached related products from the same subcategory.
@@ -633,7 +681,8 @@ class ProductRelatedView(generics.ListAPIView):
         product_slug = self.kwargs.get('product_slug')
         product = get_object_or_404(Product, slug=product_slug)
         
-        cache_key = settings.CACHE_KEYS['related_products'].format(product_slug)
+        related_key = settings.CACHE_KEYS.get('related_products', 'related_products_{}')
+        cache_key = related_key.format(product_slug) if '{}' in related_key else f'related_products_{product_slug}'
         
         def fetch_related():
             return list(Product.objects.filter(
@@ -651,7 +700,7 @@ class ProductRelatedView(generics.ListAPIView):
 
 
 # -------------------------
-# Blog ViewSet (✅ WITH CACHING)
+# Blog ViewSet
 # -------------------------
 
 class BlogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -664,7 +713,7 @@ class BlogViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = 'slug'
     pagination_class = None
 
-    @method_decorator(cache_page(60 * 15))  # ✅ 15 minutes cache
+    @method_decorator(cache_page(60 * 15))
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 

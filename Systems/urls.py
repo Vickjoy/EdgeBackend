@@ -5,7 +5,7 @@ from .views import (
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
     ProductDetailView, ProductsBySubcategoryView, ProductRelatedView,
-    CustomGoogleOAuth2CallbackView
+    CustomGoogleOAuth2CallbackView, popular_products 
 )
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -37,6 +37,8 @@ urlpatterns = [
     path('auth/login/', login_view, name='legacy_login'),
     path('auth/logout/', logout_view, name='legacy_logout'),
     path('auth/user/', current_user_view, name='current_user'),
+    path('products/popular/', popular_products, name='popular-products'),
+    
 
     # -------------------------
     # Google OAuth override (FBV, no .as_view())
@@ -102,10 +104,8 @@ urlpatterns = [
         name='product-create-by-subcategory'
     ),
 
-    # -------------------------
-    # Admin-only endpoints
-    # -------------------------
     path('categories/<int:pk>/', CategoryAdminDetailView.as_view(), name='category-admin-detail'),
     path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryAdminDetailView.as_view(), name='subcategory-admin-detail'),
     path('products/<int:pk>/', ProductAdminDetailView.as_view(), name='product-admin-detail'),
+    
 ]
