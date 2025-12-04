@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
 from django.conf import settings
-from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog
+from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog, HeroBanner
 import os
 
 
@@ -264,3 +264,99 @@ class BlogSerializer(serializers.ModelSerializer):
         except Exception as e:
             print(f"Error getting blog image URL: {e}")
             return None
+
+class HeroBannerSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Hero Banners with Cloudinary URL handling
+    """
+    poster_image = serializers.SerializerMethodField()
+    image_1 = serializers.SerializerMethodField()
+    image_2 = serializers.SerializerMethodField()
+    image_3 = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = HeroBanner
+        fields = [
+            'id',
+            'display_mode',
+            'campaign_name',
+            'title',
+            'subtitle',
+            'description',
+            'button_text',
+            'button_link',
+            'poster_image',
+            'poster_link',
+            'image_1',
+            'image_2',
+            'image_3',
+            'images',
+            'layout',
+            'background_class',
+        ]
+    
+    def _get_cloudinary_url(self, cloudinary_field):
+        """
+        Helper method to safely extract Cloudinary URL from CloudinaryField
+        """
+        if not cloudinary_field:
+            return None
+        
+        CLOUD_NAME = getattr(settings, 'CLOUDINARY_STORAGE', {}).get('CLOUD_NAME', '')
+        
+        try:
+            # Try URL attribute first
+            if hasattr(cloudinary_field, 'url'):
+                return cloudinary_field.url
+            
+            # Try build_url method
+            if hasattr(cloudinary_field, 'build_url'):
+                return cloudinary_field.build_url()
+            
+            # Handle string representation
+            image_str = str(cloudinary_field)
+            if image_str.startswith('http://') or image_str.startswith('https://'):
+                return image_str
+            
+            # Construct Cloudinary URL manually
+            return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{image_str}"
+            
+        except Exception as e:
+            print(f"Error getting Cloudinary URL: {e}")
+            return None
+    
+    def get_poster_image(self, obj):
+        """Get poster image URL"""
+        return self._get_cloudinary_url(obj.poster_image)
+    
+    def get_image_1(self, obj):
+        """Get first image URL"""
+        return self._get_cloudinary_url(obj.image_1)
+    
+    def get_image_2(self, obj):
+        """Get second image URL"""
+        return self._get_cloudinary_url(obj.image_2)
+    
+    def get_image_3(self, obj):
+        """Get third image URL"""
+        return self._get_cloudinary_url(obj.image_3)
+    
+    def get_images(self, obj):
+        """
+        Return array of image URLs based on display mode
+        - Poster mode: returns [poster_image]
+        - Standard mode: returns [image_1, image_2, image_3] (non-null only)
+        """
+        if obj.display_mode == 'poster':
+            poster_url = self._get_cloudinary_url(obj.poster_image)
+            return [poster_url] if poster_url else []
+        
+        # Standard mode - return all non-null images
+        images = []
+        for img_field in [obj.image_1, obj.image_2, obj.image_3]:
+            url = self._get_cloudinary_url(img_field)
+            if url:
+                images.append(url)
+        
+        return images

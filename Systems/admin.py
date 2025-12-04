@@ -1,9 +1,10 @@
 from django.contrib import admin
 from django.utils.safestring import mark_safe
 from import_export.admin import ImportExportModelAdmin
+from django.utils.html import format_html
 from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
-from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog
+from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog, HeroBanner
 from allauth.socialaccount.models import SocialApp
 
 admin.site.unregister(SocialApp)
@@ -229,3 +230,136 @@ class BlogAdmin(admin.ModelAdmin):
         if obj:
             return self.readonly_fields + ('slug',)
         return self.readonly_fields
+
+@admin.register(HeroBanner)
+class HeroBannerAdmin(admin.ModelAdmin):
+    list_display = (
+        'campaign_name',
+        'display_mode',
+        'status_display',
+        'display_order',
+        'image_preview',
+        'date_range',
+        'updated_at'
+    )
+    list_filter = ('is_active', 'display_mode', 'created_at')
+    search_fields = ('campaign_name', 'title', 'subtitle')
+    list_editable = ('display_order',)
+    readonly_fields = ('created_at', 'updated_at', 'image_preview')
+    
+    fieldsets = (
+        ('Campaign Information', {
+            'fields': ('campaign_name', 'display_mode', 'is_active', 'display_order'),
+            'description': 'Basic campaign settings and activation status'
+        }),
+        ('Schedule (Optional)', {
+            'fields': ('start_date', 'end_date'),
+            'description': 'Automatically activate/deactivate based on dates',
+            'classes': ('collapse',)
+        }),
+        ('Poster Mode Settings', {
+            'fields': ('poster_image', 'poster_link'),
+            'description': 'Used when Display Mode = "Poster Only"',
+            'classes': ('collapse',)
+        }),
+        ('Standard Mode Content', {
+            'fields': ('title', 'subtitle', 'description', 'button_text', 'button_link'),
+            'description': 'Used when Display Mode = "Standard Hero Slide"',
+            'classes': ('collapse',)
+        }),
+        ('Standard Mode Images', {
+            'fields': ('image_1', 'image_2', 'image_3', 'layout'),
+            'description': 'Product images for Standard mode',
+            'classes': ('collapse',)
+        }),
+        ('Styling', {
+            'fields': ('background_class',),
+            'description': 'CSS styling options',
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def status_display(self, obj):
+        """Show colored status indicator"""
+        if obj.is_active:
+            return format_html(
+                '<span style="color: white; background-color: #28a745; padding: 3px 10px; border-radius: 3px; font-weight: bold;">● LIVE</span>'
+            )
+        return format_html(
+            '<span style="color: white; background-color: #dc3545; padding: 3px 10px; border-radius: 3px;">○ INACTIVE</span>'
+        )
+    status_display.short_description = 'Status'
+    
+    def image_preview(self, obj):
+        """Show thumbnail of poster_image or image_1"""
+        image = None
+        
+        if obj.display_mode == 'poster' and obj.poster_image:
+            image = obj.poster_image
+        elif obj.display_mode == 'standard' and obj.image_1:
+            image = obj.image_1
+        
+        if image:
+            try:
+                if hasattr(image, 'url'):
+                    image_url = image.url
+                elif hasattr(image, 'build_url'):
+                    image_url = image.build_url()
+                else:
+                    image_str = str(image)
+                    if image_str.startswith('http'):
+                        image_url = image_str
+                    else:
+                        image_url = f'https://res.cloudinary.com/ddwpy1x3v/{image_str}'
+                
+                return mark_safe(
+                    f'<img src="{image_url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px;" />'
+                )
+            except Exception as e:
+                return f"Image Error: {str(e)}"
+        return mark_safe('<span style="color: #999;">No Image</span>')
+    image_preview.short_description = 'Preview'
+    
+    def date_range(self, obj):
+        """Show start and end dates if set"""
+        if obj.start_date or obj.end_date:
+            start = obj.start_date.strftime('%Y-%m-%d') if obj.start_date else 'N/A'
+            end = obj.end_date.strftime('%Y-%m-%d') if obj.end_date else 'N/A'
+            return f"{start} → {end}"
+        return mark_safe('<span style="color: #999;">No schedule</span>')
+    date_range.short_description = 'Schedule'
+    
+    actions = ['activate_banners', 'deactivate_banners']
+    
+    def activate_banners(self, request, queryset):
+        """Bulk action to activate selected banners"""
+        count = queryset.update(is_active=True)
+        self.message_user(request, f'{count} banner(s) successfully activated and are now LIVE.')
+    activate_banners.short_description = 'Activate selected banners'
+    
+    def deactivate_banners(self, request, queryset):
+        """Bulk action to deactivate selected banners"""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f'{count} banner(s) successfully deactivated.')
+    deactivate_banners.short_description = 'Deactivate selected banners'
+    
+    def save_model(self, request, obj, form, change):
+        """Show helpful message after saving"""
+        super().save_model(request, obj, form, change)
+        
+        if obj.is_active:
+            self.message_user(
+                request,
+                f'Banner "{obj.campaign_name}" is now LIVE and will appear on the homepage within 5-15 minutes (cache refresh).',
+                level='success'
+            )
+        else:
+            self.message_user(
+                request,
+                f'Banner "{obj.campaign_name}" is INACTIVE and will not appear on the website.',
+                level='warning'
+            )

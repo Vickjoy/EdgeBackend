@@ -5,7 +5,7 @@ from .views import (
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
     ProductDetailView, ProductsBySubcategoryView, ProductRelatedView,
-    CustomGoogleOAuth2CallbackView, popular_products 
+    CustomGoogleOAuth2CallbackView, popular_products, hero_banners  # ✅ Added hero_banners
 )
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -37,11 +37,13 @@ urlpatterns = [
     path('auth/login/', login_view, name='legacy_login'),
     path('auth/logout/', logout_view, name='legacy_logout'),
     path('auth/user/', current_user_view, name='current_user'),
+    
+    # ✅ Hero Banners & Popular Products
+    path('hero-banners/', hero_banners, name='hero-banners'),
     path('products/popular/', popular_products, name='popular-products'),
     
-
     # -------------------------
-    # Google OAuth override (FBV, no .as_view())
+    # Google OAuth override
     # -------------------------
     path(
         'accounts/google/login/callback/',
@@ -77,7 +79,7 @@ urlpatterns = [
     ),
 
     # -------------------------
-    # Product endpoints (contract-specific)
+    # Product endpoints
     # -------------------------
     path(
         'subcategories/<slug:subcategory_slug>/products/',
@@ -91,7 +93,6 @@ urlpatterns = [
         name='product-detail-contract'
     ),
 
-    # ✅ NEW Related Products Endpoint
     path(
         'products/<slug:product_slug>/related/',
         ProductRelatedView.as_view(),
@@ -107,5 +108,4 @@ urlpatterns = [
     path('categories/<int:pk>/', CategoryAdminDetailView.as_view(), name='category-admin-detail'),
     path('categories/<slug:category_slug>/subcategories/<int:pk>/', SubcategoryAdminDetailView.as_view(), name='subcategory-admin-detail'),
     path('products/<int:pk>/', ProductAdminDetailView.as_view(), name='product-admin-detail'),
-    
 ]

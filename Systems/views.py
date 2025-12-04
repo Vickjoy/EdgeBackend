@@ -22,7 +22,7 @@ from django.conf import settings
 from .models import Category, Subcategory, Product, Blog
 from .serializers import (
     CategorySerializer, SubcategorySerializer, ProductSerializer,
-    UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer, BlogSerializer
+    UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer, BlogSerializer, HeroBannerSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 
@@ -728,3 +728,42 @@ class BlogViewSet(viewsets.ReadOnlyModelViewSet):
         blogs = self.get_queryset()[:3]
         serializer = self.get_serializer(blogs, many=True)
         return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def hero_banners(request):
+    """
+    Returns active hero banners with caching.
+    Only returns banners where is_active=True, ordered by display_order and creation date.
+    Cache timeout: 5 minutes (300 seconds)
+    """
+    cache_key = 'active_hero_banners'
+    
+    # Try to get from cache
+    cached_data = cache.get(cache_key)
+    if cached_data is not None:
+        logger.debug(f"Cache hit for hero banners")
+        return Response(cached_data)
+    
+    # Fetch from database
+    try:
+        banners = HeroBanner.objects.filter(
+            is_active=True
+        ).order_by('display_order', '-created_at')
+        
+        serializer = HeroBannerSerializer(
+            banners,
+            many=True,
+            context={'request': request}
+        )
+        
+        # Cache for 5 minutes
+        cache.set(cache_key, serializer.data, 60 * 5)
+        logger.debug(f"Cache miss - stored hero banners")
+        
+        return Response(serializer.data)
+        
+    except Exception as e:
+        logger.error(f"Error fetching hero banners: {str(e)}")
+        # Return empty array on failure (frontend will use hardcoded slides)
+        return Response([], status=status.HTTP_200_OK)
