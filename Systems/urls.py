@@ -5,7 +5,7 @@ from .views import (
     me_view, register_view, login_view, logout_view, current_user_view,
     CategoryAdminDetailView, SubcategoryAdminDetailView, ProductAdminDetailView,
     ProductDetailView, ProductsBySubcategoryView, ProductRelatedView,
-    CustomGoogleOAuth2CallbackView, popular_products, hero_banners  # ✅ Added hero_banners
+    CustomGoogleOAuth2CallbackView, popular_products, hero_banners, HeroBannerViewSet # ✅ Added hero_banners
 )
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -16,6 +16,7 @@ router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'subcategories', SubcategoryViewSet, basename='subcategory')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'blogs', BlogViewSet, basename='blog')
+router.register(r'hero-banners', HeroBannerViewSet, basename='hero-banners')
 
 # Nested routers
 categories_router = routers.NestedDefaultRouter(router, r'categories', lookup='category')

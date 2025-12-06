@@ -19,7 +19,7 @@ import logging
 from django.core.cache import cache
 from django.conf import settings
 
-from .models import Category, Subcategory, Product, Blog
+from .models import Category, Subcategory, Product, Blog, HeroBanner
 from .serializers import (
     CategorySerializer, SubcategorySerializer, ProductSerializer,
     UserRegistrationSerializer, UserProfileSerializer, CustomTokenObtainPairSerializer, BlogSerializer, HeroBannerSerializer
@@ -767,3 +767,8 @@ def hero_banners(request):
         logger.error(f"Error fetching hero banners: {str(e)}")
         # Return empty array on failure (frontend will use hardcoded slides)
         return Response([], status=status.HTTP_200_OK)
+
+class HeroBannerViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = HeroBanner.objects.filter(is_active=True)
+    serializer_class = HeroBannerSerializer
+    permission_classes = [AllowAny]

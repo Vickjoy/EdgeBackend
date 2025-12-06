@@ -6,6 +6,7 @@ from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
 from .models import Category, Subcategory, Product, SpecificationTable, SpecificationRow, Blog, HeroBanner
 from allauth.socialaccount.models import SocialApp
+from django.core.cache import cache
 
 admin.site.unregister(SocialApp)
 
@@ -254,7 +255,7 @@ class HeroBannerAdmin(admin.ModelAdmin):
         }),
         ('Schedule (Optional)', {
             'fields': ('start_date', 'end_date'),
-            'description': 'Automatically activate/deactivate based on dates',
+            'description': 'Leave BLANK to always show when active. Only fill if you want automatic scheduling.',
             'classes': ('collapse',)
         }),
         ('Poster Mode Settings', {
@@ -338,23 +339,28 @@ class HeroBannerAdmin(admin.ModelAdmin):
     def activate_banners(self, request, queryset):
         """Bulk action to activate selected banners"""
         count = queryset.update(is_active=True)
-        self.message_user(request, f'{count} banner(s) successfully activated and are now LIVE.')
+        cache.delete('active_hero_banners')
+        self.message_user(request, f'{count} banner(s) successfully activated and are now LIVE. Cache cleared!')
     activate_banners.short_description = 'Activate selected banners'
     
     def deactivate_banners(self, request, queryset):
         """Bulk action to deactivate selected banners"""
         count = queryset.update(is_active=False)
-        self.message_user(request, f'{count} banner(s) successfully deactivated.')
+        cache.delete('active_hero_banners')
+        self.message_user(request, f'{count} banner(s) successfully deactivated. Cache cleared!')
     deactivate_banners.short_description = 'Deactivate selected banners'
     
     def save_model(self, request, obj, form, change):
-        """Show helpful message after saving"""
+        """Clear hero banner cache when saving and show helpful message"""
         super().save_model(request, obj, form, change)
+        
+        # ✅ CLEAR CACHE IMMEDIATELY AFTER SAVING
+        cache.delete('active_hero_banners')
         
         if obj.is_active:
             self.message_user(
                 request,
-                f'Banner "{obj.campaign_name}" is now LIVE and will appear on the homepage within 5-15 minutes (cache refresh).',
+                f'✅ Banner "{obj.campaign_name}" is now LIVE! Cache cleared - refresh your website to see it immediately.',
                 level='success'
             )
         else:
@@ -363,3 +369,9 @@ class HeroBannerAdmin(admin.ModelAdmin):
                 f'Banner "{obj.campaign_name}" is INACTIVE and will not appear on the website.',
                 level='warning'
             )
+    
+    def delete_model(self, request, obj):
+        """Clear cache when deleting a banner"""
+        super().delete_model(request, obj)
+        cache.delete('active_hero_banners')
+        self.message_user(request, 'Banner deleted and cache cleared.')
