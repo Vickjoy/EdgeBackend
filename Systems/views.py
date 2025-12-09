@@ -699,33 +699,35 @@ class ProductRelatedView(generics.ListAPIView):
         return ctx
 
 
-# -------------------------
-# Blog ViewSet
-# -------------------------
-
 class BlogViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Public read-only access to published blogs with caching.
+    Now returns ALL published blogs, not just 3.
     """
     queryset = Blog.objects.filter(is_published=True).order_by('-created_at')
     serializer_class = BlogSerializer
     permission_classes = [AllowAny]
     lookup_field = 'slug'
-    pagination_class = None
+    pagination_class = None  # No pagination for blogs
 
     @method_decorator(cache_page(60 * 15))
     def list(self, request, *args, **kwargs):
+        """Returns ALL published blogs"""
         return super().list(request, *args, **kwargs)
 
     @method_decorator(cache_page(60 * 15))
     def retrieve(self, request, *args, **kwargs):
+        """Returns a single blog by slug"""
         return super().retrieve(request, *args, **kwargs)
     
     @action(detail=False, methods=['get'], url_path='footer')
     @method_decorator(cache_page(60 * 15))
     def footer_blogs(self, request):
-        """Returns cached 3 latest blogs for footer display"""
-        blogs = self.get_queryset()[:3]
+        """
+        Returns cached latest blogs for footer display.
+        Changed from 3 to 10 blogs to allow frontend to control display.
+        """
+        blogs = self.get_queryset()[:10]  # Get 10 latest blogs instead of 3
         serializer = self.get_serializer(blogs, many=True)
         return Response(serializer.data)
 
